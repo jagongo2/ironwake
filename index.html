@@ -395,10 +395,10 @@ class FireFluid{
   this.cell=2;this.ox=-64;this.oy=-128;this.w=Math.ceil((WORLD+128)/2);this.h=Math.ceil((FLOOR+256)/2);this.n=this.w*this.h;this.tile=16;this.tw=Math.ceil(this.w/16);this.th=Math.ceil(this.h/16);
   for(const name of ['t','f','s','u','v','nt','nf','ns','nu','nv','p','q','div','curl'])this[name]=new Float32Array(this.n);
   this.fields=['t','f','s','u','v','nt','nf','ns','nu','nv','p','q','div','curl'];this.solid=new Uint8Array(this.n);this.solidCells=[];
-  this.live=new Uint8Array(this.tw*this.th);this.computed=new Uint8Array(this.live.length);this.previous=new Uint8Array(this.live.length);this.cells=new Int32Array(this.n);this.count=0;this.acc=0;this.frame=0;this.wind=0;this.windTarget=0;this.windTime=0;this.lights=[];this.burning=0;
+  this.live=new Uint8Array(this.tw*this.th);this.computed=new Uint8Array(this.live.length);this.previous=new Uint8Array(this.live.length);this.lightEnergy=new Float32Array(this.live.length);this.rasterLeft=new Int32Array(H);this.rasterRight=new Int32Array(H);this.cells=new Int32Array(this.n);this.count=0;this.acc=0;this.frame=0;this.wind=0;this.windTarget=0;this.windTime=0;this.lights=[];this.burning=0;
   this.skin=makeCanvas(W,H);this.smokeSkin=makeCanvas(W,H);this.cx=this.skin.getContext('2d');this.sx=this.smokeSkin.getContext('2d');this.image=this.cx.createImageData(W,H);this.smokeImage=this.sx.createImageData(W,H);this.rasterFrame=-1;this.rasterX=NaN;this.rasterY=NaN;
  }
- resize(){this.skin.width=this.smokeSkin.width=W;this.skin.height=this.smokeSkin.height=H;this.image=this.cx.createImageData(W,H);this.smokeImage=this.sx.createImageData(W,H);this.rasterFrame=-1;}
+ resize(){this.skin.width=this.smokeSkin.width=W;this.skin.height=this.smokeSkin.height=H;this.image=this.cx.createImageData(W,H);this.smokeImage=this.sx.createImageData(W,H);this.rasterLeft=new Int32Array(H);this.rasterRight=new Int32Array(H);this.rasterFrame=-1;}
  reset(){for(const name of this.fields)this[name].fill(0);this.live.fill(0);this.computed.fill(0);this.previous.fill(0);this.solid.fill(0);this.solidCells=[];this.count=0;this.acc=0;this.frame++;this.burning=0;this.lights=[];this.image.data.fill(0);this.smokeImage.data.fill(0);this.cx.putImageData(this.image,0,0);this.sx.putImageData(this.smokeImage,0,0);this.rasterFrame=-1;}
  index(wx,wy){return clamp(Math.floor((wx-this.ox)/2),1,this.w-2)+clamp(Math.floor((wy-this.oy)/2),1,this.h-2)*this.w}
  mark(i){const x=i%this.w,y=Math.floor(i/this.w);this.live[(x>>4)+(y>>4)*this.tw]=1}
@@ -406,7 +406,10 @@ class FireFluid{
  flow(wx,wy){const i=this.index(wx,wy);return {u:this.u[i]*2,v:this.v[i]*2,t:this.t[i]}}
  obstacles(){for(const i of this.solidCells)this.solid[i]=0;this.solidCells.length=0;this.solid.fill(255,Math.floor((FLOOR-this.oy)/2)*this.w);
   for(let si=0;si<ships.length;si++){const ship=ships[si];if(ship.count<10)continue;const r=ship.w*.58,minx=clamp(Math.floor((ship.x-r-this.ox)/2),1,this.w-2),maxx=clamp(Math.ceil((ship.x+r-this.ox)/2),1,this.w-2),miny=clamp(Math.floor((ship.y-r-this.oy)/2),1,this.h-2),maxy=clamp(Math.ceil((ship.y+r-this.oy)/2),1,this.h-2);
-   for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){const i=x+y*this.w;if(ship.contains(this.ox+x*2+1,this.oy+y*2+1)){this.solid[i]=si+1;this.solidCells.push(i)}}
+   // Pose and gear stay fixed during this scan. Reuse them instead of rebuilding
+   // the same lookup context for every gas cell; material/gear damage stays live.
+   const cs=Math.cos(ship.angle),sn=Math.sin(ship.angle),left=gearRaster(ship,0)?.map,right=gearRaster(ship,1)?.map;
+   for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){const i=x+y*this.w,dx=this.ox+x*2+1-ship.x,dy=this.oy+y*2+1-ship.y,lx=dx*cs+dy*sn+ship.w/2,ly=-dx*sn+dy*cs+ship.h/2,ix=Math.floor(lx),iy=Math.floor(ly),key=(Math.floor(lx-ship.w/2)+128)+(Math.floor(ly-ship.h/2)+64)*256;if((ix>=0&&iy>=0&&ix<ship.w&&iy<ship.h&&ship.mat[ix+iy*ship.w]!==0)||left?.has(key)||right?.has(key)){this.solid[i]=si+1;this.solidCells.push(i)}}
   }
  }
  inject(wx,wy,radius,fuel,heat,jx=0,jy=-3){
@@ -431,7 +434,7 @@ class FireFluid{
   // A local pressure solve couples nearby flames and routes gas around hull material.
   let p=this.p,q=this.q;for(let iter=0;iter<6;iter++){for(let k=0;k<n;k++){const i=cells[k];if(solid[i]){q[i]=0;continue}const c=p[i];q[i]=((solid[i-1]?c:p[i-1])+(solid[i+1]?c:p[i+1])+(solid[i-w]?c:p[i-w])+(solid[i+w]?c:p[i+w])-this.div[i])*.25}const swap=p;p=q;q=swap}this.p=p;this.q=q;
   for(let k=0;k<n;k++){const i=cells[k];if(solid[i])continue;nu[i]-=(p[i+1]-p[i-1])*.5;nv[i]-=(p[i+w]-p[i-w])*.5;if(solid[i-1]||solid[i+1])nu[i]*=.2;if(solid[i-w]||solid[i+w])nv[i]*=.2}
-  this.live.fill(0);this.burning=0;const lightEnergy=new Float32Array(this.live.length);
+  this.live.fill(0);this.burning=0;const lightEnergy=this.lightEnergy;lightEnergy.fill(0);
   for(let k=0;k<n;k++){const i=cells[k],x=i%w,y=(i/w)|0;if(solid[i]){nt[i]=nf[i]=ns[i]=0;continue}let bx=x-nu[i]*dt,by=y-nv[i]*dt;const bi=clamp(Math.round(bx),1,w-2)+clamp(Math.round(by),1,this.h-2)*w;if(solid[bi]){bx=x;by=y}
    let heat=this.sample(t,bx,by),fuel=this.sample(f,bx,by),smoke=this.sample(s,bx,by);
    const oxygen=1/(1+fuel*.45+smoke*.12),rate=heat>.19?Math.min(fuel,fuel*(1.5+heat*1.2)*oxygen*dt):0;
@@ -444,8 +447,11 @@ class FireFluid{
   this.t=nt;this.nt=t;this.f=nf;this.nf=f;this.s=ns;this.ns=s;this.u=nu;this.nu=u;this.v=nv;this.nv=v;
   this.lights=[];for(let ti=0;ti<lightEnergy.length;ti++)if(lightEnergy[ti]>5)this.lights.push({x:this.ox+((ti%this.tw)*16+8)*2,y:this.oy+(((ti/this.tw)|0)*16+8)*2,energy:lightEnergy[ti]});
  }
- raster(){const cx=Math.round(cam.x),cy=Math.round(cam.y);if(this.rasterFrame===this.frame&&cx===this.rasterX&&cy===this.rasterY)return;this.rasterFrame=this.frame;this.rasterX=cx;this.rasterY=cy;const data=this.image.data,smoke=this.smokeImage.data;data.fill(0);smoke.fill(0);const w=this.w,t=this.t,s=this.s;
-  for(let y=0;y<H;y++){const gy=(cy+y-this.oy)/2,iy=Math.floor(gy),fy=gy-iy;if(iy<1||iy>=this.h-2)continue;for(let x=0;x<W;x++){const gx=(cx+x-this.ox)/2,ix=Math.floor(gx),fx=gx-ix;if(ix<1||ix>=w-2)continue;const i=ix+iy*w;if(t[i]+t[i+1]+t[i+w]+t[i+w+1]+s[i]+s[i+1]+s[i+w]+s[i+w+1]<.06)continue;const temp=(t[i]*(1-fx)+t[i+1]*fx)*(1-fy)+(t[i+w]*(1-fx)+t[i+w+1]*fx)*fy,density=(s[i]*(1-fx)+s[i+1]*fx)*(1-fy)+(s[i+w]*(1-fx)+s[i+w+1]*fx)*fy,pi=(x+y*W)*4;
+ raster(){const cx=Math.round(cam.x),cy=Math.round(cam.y);if(this.rasterFrame===this.frame&&cx===this.rasterX&&cy===this.rasterY)return;this.rasterFrame=this.frame;this.rasterX=cx;this.rasterY=cy;const data=this.image.data,smoke=this.smokeImage.data;data.fill(0);smoke.fill(0);const w=this.w,t=this.t,s=this.s,left=this.rasterLeft,right=this.rasterRight;left.fill(W);right.fill(0);
+  // Include both freshly injected and last-computed tiles. One cell of padding
+  // preserves the original bilinear interpolation at every tile boundary.
+  for(let ti=0;ti<this.live.length;ti++){if(!this.live[ti]&&!this.computed[ti])continue;const tx=ti%this.tw,ty=(ti/this.tw)|0,x0=Math.max(0,this.ox+(tx*16-1)*2-cx),x1=Math.min(W,this.ox+(tx+1)*32-cx),y0=Math.max(0,this.oy+(ty*16-1)*2-cy),y1=Math.min(H,this.oy+(ty+1)*32-cy);if(x0>=x1||y0>=y1)continue;for(let y=y0;y<y1;y++){if(x0<left[y])left[y]=x0;if(x1>right[y])right[y]=x1}}
+  for(let y=0;y<H;y++){const gy=(cy+y-this.oy)/2,iy=Math.floor(gy),fy=gy-iy;if(iy<1||iy>=this.h-2)continue;for(let x=left[y];x<right[y];x++){const gx=(cx+x-this.ox)/2,ix=Math.floor(gx),fx=gx-ix;if(ix<1||ix>=w-2)continue;const i=ix+iy*w;if(t[i]+t[i+1]+t[i+w]+t[i+w+1]+s[i]+s[i+1]+s[i+w]+s[i+w+1]<.06)continue;const temp=(t[i]*(1-fx)+t[i+1]*fx)*(1-fy)+(t[i+w]*(1-fx)+t[i+w+1]*fx)*fy,density=(s[i]*(1-fx)+s[i+1]*fx)*(1-fy)+(s[i+w]*(1-fx)+s[i+w+1]*fx)*fy,pi=(x+y*W)*4;
     if(density>.035){smoke[pi]=27;smoke[pi+1]=34;smoke[pi+2]=28;smoke[pi+3]=Math.min(145,density*100)}
     if(temp<.16)continue;const noise=fireNoise[((x+cx)*17+(y+cy)*131+this.frame*11)&2047],value=temp+(noise-.5)*.065,ci=clamp(Math.floor((value-.18)*4.3),0,7),c=fireRamp[ci];data[pi]=c[0];data[pi+1]=c[1];data[pi+2]=c[2];data[pi+3]=clamp((temp-.14)*1.65,0,1)*245;
    }}this.cx.putImageData(this.image,0,0);this.sx.putImageData(this.smokeImage,0,0);
@@ -470,6 +476,7 @@ function ignite(x,y,strength=1,life=.7,owner=null,lx=0,ly=0,kind='burst'){
 // World-space combustion parcels. Each plume keeps its momentum after emission;
 // the nozzle never owns a repeating flame image or animation sheet.
 const jetGas=[];
+const smokeColors=[[14,17,15],[22,25,21],[32,35,29],[44,46,37],[61,61,48]];
 class BillowSmoke{
  constructor(){this.puffs=[];this.resize();this.frame=0;this.renderFrame=-1;}
  resize(){this.rw=Math.ceil(W/2);this.rh=Math.ceil(H/2);this.canvas=makeCanvas(this.rw,this.rh);this.ctx=this.canvas.getContext('2d');this.image=this.ctx.createImageData(this.rw,this.rh);this.density=new Float32Array(this.rw*this.rh);this.glow=new Float32Array(this.rw*this.rh);this.renderFrame=-1;}
@@ -487,11 +494,12 @@ class BillowSmoke{
   if(p.y+p.r>FLOOR){p.y=Math.min(p.y,FLOOR-p.r*.35);p.vx+=p.wind*dt*3}
  }}
  raster(){const cx=Math.round(cam.x),cy=Math.round(cam.y);if(this.renderFrame>=0&&this.frame-this.renderFrame<2)return;this.cx=cx;this.cy=cy;this.renderFrame=this.frame;
-  const W=this.rw,H=this.rh,density=this.density,glow=this.glow,out=this.image.data;density.fill(0);glow.fill(0);out.fill(0);
+  const W=this.rw,H=this.rh,density=this.density,glow=this.glow,out=this.image.data;density.fill(0);glow.fill(0);out.fill(0);let minX=W,maxX=0,minY=H,maxY=0;
   for(const p of this.puffs){const age=p.max-p.life,fade=Math.min(1,age/.14)*Math.min(1,p.life/1.6),cs=Math.cos(p.rot),sn=Math.sin(p.rot);
    if((p.x-cx+p.r*2)*.5<0||(p.x-cx-p.r*2)*.5>W||(p.y-cy+p.r*2)*.5<0||(p.y-cy-p.r*2)*.5>H)continue;
    for(const l of p.lobes){const r=p.r*l.r*.5,lx=(p.x-cx+(l.x*cs-l.y*sn)*p.r)*.5,ly=(p.y-cy+(l.x*sn+l.y*cs)*p.r)*.5;
     const y0=Math.max(0,Math.floor(ly-r)),y1=Math.min(H-1,Math.ceil(ly+r));
+    minX=Math.min(minX,Math.max(1,Math.floor(lx-r)));maxX=Math.max(maxX,Math.min(W-2,Math.ceil(lx+r)));minY=Math.min(minY,Math.max(1,y0));maxY=Math.max(maxY,Math.min(H-2,y1));
     for(let y=y0;y<=y1;y++){const dy=(y-ly)/r;const span=Math.sqrt(Math.max(0,1-dy*dy))*r;
      for(let x=Math.max(0,Math.floor(lx-span));x<=Math.min(W-1,Math.ceil(lx+span));x++){
       const dx=(x-lx)/r,k=1-dx*dx-dy*dy;if(k<=0)continue;
@@ -502,10 +510,10 @@ class BillowSmoke{
     }
    }
   }
-  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=x+y*W,d=density[i];if(d<.025)continue;
+  for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){const i=x+y*W,d=density[i];if(d<.025)continue;
    const edge=clamp((density[i+W]-density[i-W]+density[i+1]-density[i-1])*.8,-.28,.32);
    const shade=clamp(Math.floor((.18+edge+1/(1+d)*.26)*7),0,4),warm=Math.min(1,glow[i]*.7),pi=i*4;
-   const c=[[14,17,15],[22,25,21],[32,35,29],[44,46,37],[61,61,48]][shade];
+   const c=smokeColors[shade];
    out[pi]=c[0]+warm*20;out[pi+1]=c[1]+warm*9;out[pi+2]=c[2];out[pi+3]=Math.min(238,(1-Math.exp(-d*2))*246);
   }
   this.ctx.putImageData(this.image,0,0);
