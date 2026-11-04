@@ -301,6 +301,7 @@ html,body,button,input,.hud-side,.brief p,.title-footer p,.control-guide kbd,htm
 @media(max-height:570px){.title-start strong{font-size:20px;font-family:DepartureMono,Mona10,monospace}.title-ribbon{font-size:12px}.title-menu-grid small{font-size:10px;line-height:1}.title-menu-grid button{gap:0}}
 
 </style>
+<script defer src="./src/fps-hud.js"></script>
 </head>
 <body>
 <main class="console">
@@ -962,7 +963,7 @@ function render(){
  if(options.scan){ctx.globalAlpha=.055;for(let y=0;y<H;y+=3)rect(0,y,W,1,0);ctx.globalAlpha=1}tactical();
  if(state==='paused'){ctx.globalAlpha=$('settings').hidden?.6:.27;rect(0,0,W,H,0);ctx.globalAlpha=1;}frames++;stats.frames=frames;
 }
-function loop(ts){if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
+function loop(ts){window.__ironwakeFPS?.frame(ts);if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
 function resizeViewport(){
  const r=$('stage').getBoundingClientRect?.()||{width:1280,height:720};if(!r.width||!r.height)return;
  const scale=Math.max(Math.min(r.width/640,r.height/360),r.width/1280,r.height/720,.5),nw=Math.max(240,Math.round(r.width/scale)),nh=Math.max(180,Math.round(r.height/scale));
