@@ -1,9 +1,10 @@
 # 0.11 WebGL development
 
-This branch implements the user's requested WebGL rendering experiment from
-the optimized 0.11 game, with the same resolution, camera, artwork and physics.
+The user has adopted PixiJS WebGL as the development renderer, starting from
+the optimized 0.11 game. This supersedes the earlier instruction to continue
+development on `work/v0.12`. Keep the same resolution, camera, artwork and physics.
 
-- Work on `work/v0.11-webgl`. Preserve `work/v0.12`, `preview/v0.11-fps`, and
+- Continue all game development on `work/v0.11-webgl`. Preserve `work/v0.12`, `preview/v0.11-fps`, and
   `archive/v0.23`; do not overwrite or merge their game changes into this branch.
 - Production `ironwake-ten.vercel.app` remains on 0.11 Canvas with its FPS toggle.
 - Publish WebGL work only as a separate preview until the user requests release.
