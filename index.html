@@ -300,6 +300,7 @@ html,body,button,input,.hud-side,.brief p,.title-footer p,.control-guide kbd,htm
 @media(max-width:520px){.label,.readout small,.status{font-family:DepartureMono,Mona10,monospace;font-size:10px}.readout{font-size:24px}.title-menu-grid strong{font-size:10px;font-family:DepartureMono,Mona10,monospace}.title-start strong{font-size:20px;font-family:DepartureMono,Mona10,monospace}.title-ribbon{font-size:12px}}
 @media(max-height:570px){.title-start strong{font-size:20px;font-family:DepartureMono,Mona10,monospace}.title-ribbon{font-size:12px}.title-menu-grid small{font-size:10px;line-height:1}.title-menu-grid button{gap:0}}
 
+#message:empty{display:none}
 </style>
 <script defer src="./src/fps-hud.js"></script>
 </head>
@@ -355,7 +356,7 @@ html,body,button,input,.hud-side,.brief p,.title-footer p,.control-guide kbd,htm
   <section class="hud" aria-label="함선 계기판">
    <aside class="hud-side hud-left" aria-label="선체 및 항법"><span class="projection-grain" aria-hidden="true"></span>
     <div class="instrument"><div class="label">K-17 / 선체 보존율</div><div class="readout"><span id="hull">100<small> %</small></span><small id="engines">기관 4/4</small></div><div class="bar"><i id="hullBar"></i></div></div>
-    <div class="instrument"><div class="label">ALT / 고도</div><div class="readout"><span id="alt">350<small> m</small></span><small id="speed">0 m/s</small></div><div class="status">관성 항법 / 저고도 비행</div><div class="status" id="gearState">[G] 착륙장치 · 수납</div></div>
+    <div class="instrument"><div class="label">ALT / 고도</div><div class="readout"><span id="alt">350<small> m</small></span><small id="speed">0 m/s</small></div></div>
    </aside>
    <aside class="hud-side hud-right" aria-label="무장 및 전술"><span class="projection-grain" aria-hidden="true"></span>
     <div class="instrument"><div class="label">57 mm / 포신 온도</div><div class="readout"><span id="heat">00<small> %</small></span><small id="gunState">사격 가능</small></div><div class="bar hot"><i id="heatBar" style="width:0"></i></div><div class="status" id="heavy">180 mm 고폭탄 · 준비</div></div>
