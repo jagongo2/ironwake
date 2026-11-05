@@ -29,15 +29,15 @@ function load(html) {
   sandbox.window = sandbox;
   const context = vm.createContext(sandbox);
   vm.runInContext('let randomSeed=73917; Math.random=()=>{randomSeed=(Math.imul(randomSeed,1664525)+1013904223)>>>0;return randomSeed/4294967296;};', context);
-  const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const source = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] || fs.readFileSync('src/game.js','utf8');
   const expose = `
     window.test={FireFluid,Ship,fireFluid,billowSmoke,jetGas,jetImage:()=>jetImage,drawJetGas,
       gearRaster,breakGear,damage,explosion,update,render,updateShip,solveGround,collideShips,
       reset:()=>{reset(true);}, camera:(x,y)=>{cam.x=x;cam.y=y;},
-      viewport:(width,height)=>{W=width;H=height;fireFluid.resize();billowSmoke.resize();},
+      viewport:(width,height)=>{W=width;H=height;fireFluid.resize();billowSmoke.resize();jetWidth=W;jetHeight=H;jetSurface.width=W;jetSurface.height=H;jetImage=jetContext.createImageData(W,H);},
       key:(key,down)=>down?keys.add(key):keys.delete(key),
       aim:(x,y,down)=>{pointer.x=x;pointer.y=y;pointer.down=down;},
-      ships:()=>ships, state:()=>({snapshot:window.IRONWAKE.snapshot(),
+      ships:()=>ships, state:()=>({snapshot:(()=>{const s=window.IRONWAKE.snapshot();delete s.rendering;delete s.cameraWidth;return s;})(),
         ships:ships.map(s=>({mat:Array.from(s.mat),hp:Array.from(s.hp),x:s.x,y:s.y,vx:s.vx,vy:s.vy,angle:s.angle,av:s.av})),
         particles,jetGas,pending:pending.map(p=>({x:p.x,y:p.y,t:p.t})),
         fluid:['t','f','s','u','v'].map(k=>Array.from(fireFluid[k]))})};
@@ -45,6 +45,7 @@ function load(html) {
   // Cache the realm's built-ins locally: vm's global proxy lookup would otherwise
   // dominate hot pixel loops and distort CPU timings compared with normal JS.
   vm.runInContext(source.replace("(() => {", "(() => {\nconst Math=globalThis.Math;").replace(/\}\)\(\);\s*$/, expose + '\n})();'), context);
+  sandbox.test.viewport(640,360);
   return sandbox.test;
 }
 const hash = data => createHash('sha256').update(Buffer.from(data.buffer, data.byteOffset, data.byteLength)).digest('hex');
