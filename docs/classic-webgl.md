@@ -54,5 +54,5 @@ for both. These are short samples, not guarantees for other hardware or long
 sessions. Small FPS differences can vary between runs. CPU timing includes game
 updates, effect generation and render submission, but excludes asynchronous GPU
 execution. It is not operating-system CPU utilization. WebGL helps the first two
-scenes but has no demonstrated stress-scene advantage here, so this branch is a
-separate preview rather than an automatic production replacement.
+scenes but has no demonstrated stress-scene advantage here. After comparing the
+preview, the user explicitly requested production adoption on 2026-11-05.

@@ -188,4 +188,4 @@ IRONWAKE-v011-collision.png는 실제 게임 충돌·재질 파괴 코드를 사
 
 `npm ci`, `npm run dev` 후 `http://localhost:4173/`에서 WebGL로 실행합니다. `?renderer=canvas`를 붙이면 같은 코드의 Canvas 경로로 비교할 수 있습니다. WebGL 초기화 실패 시 Canvas로 전환합니다. 물리·효과 회귀 검사는 `npm test`, 실제 화면 검사는 `npm run test:render`, 성능 비교는 `node tests/rendering.cjs --bench`입니다.
 
-시험 PC에서는 WebGL이 비행·사격의 CPU 시간을 줄였지만 연속 폭발은 Canvas보다 소폭 느렸습니다. 공개 사이트는 기존 Canvas 0.11을 유지합니다. [구현·동등성 검사·측정 결과](docs/classic-webgl.md).
+시험 PC에서는 WebGL이 비행·사격의 CPU 시간을 줄였지만 연속 폭발은 Canvas보다 소폭 느렸습니다. 사용자 요청에 따라 2026-11-05 공개 사이트도 0.11 WebGL로 전환했습니다. [구현·동등성 검사·측정 결과](docs/classic-webgl.md).
