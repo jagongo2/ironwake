@@ -27,6 +27,7 @@ const server=http.createServer((req,res)=>{
    }
    const open=async()=>{await page.locator('#start').click();await page.waitForFunction(()=>document.getElementById('preflight').dataset.phase==='service');assert.equal((await page.evaluate(()=>window.IRONWAKE.snapshot())).state,'preflight');};
    await open();assert.equal(await page.locator('.launch-lever').isDisabled(),true);
+   await page.evaluate(()=>{const panel=document.querySelector('.service-console'),animate=panel.animate.bind(panel);window.__panelRecoil=0;window.__recoilPose=0;panel.animate=(frames,options)=>{if(Array.isArray(frames)&&frames.some(frame=>'translate' in frame)){window.__panelRecoil++;window.__recoilPose=Number(document.querySelector('.lever-canvas').dataset.position);}return animate(frames,options);};});
    assert.equal(await page.locator('.lever-canvas').getAttribute('data-renderer'),name==='lever-fallback'?'canvas3d':'webgl3d');
    assert.equal(await page.locator('.launch-lever img').count(),0,'lever uses geometry rather than a rotated image');
    const before=await page.evaluate(()=>window.IRONWAKE.snapshot().frames);await page.keyboard.press('r');await page.waitForTimeout(150);
@@ -47,6 +48,7 @@ const server=http.createServer((req,res)=>{
     const resting=await page.locator('.lever-grip-hit').boundingBox(),rx=resting.x+resting.width/2,ry=resting.y+resting.height/2;
     await page.mouse.move(rx,ry);await page.mouse.down();await page.mouse.move(rx,ry+lever.height*.55*.78,{steps:10});await page.waitForTimeout(160);
     const pulled=await page.locator('.lever-grip-hit').boundingBox();assert.ok(pulled.y>resting.y+10,'grip moves down through a 3D arc');assert.ok(pulled.width>resting.width,'grip grows as it approaches camera');
+    assert.ok(Math.abs((pulled.x+pulled.width/2)-(resting.x+resting.width/2))<1,'grip stays on vertical centreline');
     await page.screenshot({path:path.join(root,'artifacts','lever-mid-pull.png')});await page.mouse.up();
     await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('preflight').hidden);
     assert.equal(await page.evaluate(()=>window.IRONWAKE.snapshot().state),'briefing');
@@ -59,6 +61,7 @@ const server=http.createServer((req,res)=>{
     await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y+Math.max(75,button.height*.58),{steps:8});await page.screenshot({path:path.join(root,'artifacts','lever-portrait-full-pull.png')});await page.mouse.up();
    }else{await page.locator('.launch-lever').focus();await page.keyboard.press('Enter');}
    await page.waitForFunction(()=>document.getElementById('preflight').hidden&&window.IRONWAKE.snapshot().state==='playing');
+   const recoil=await page.evaluate(()=>({count:window.__panelRecoil,pose:window.__recoilPose}));if(name==='desktop'){assert.ok(recoil.count>0,'panel recoils on mechanical contact');assert.ok(recoil.pose>.98);}else assert.equal(recoil.count,0,'motion preference disables panel shake');
    assert.equal(await page.locator('#game').evaluate(el=>el.inert),false);assert.equal(await page.locator('#game').evaluate(el=>getComputedStyle(el).filter),'none');
    assert.equal(await page.evaluate(()=>window.IRONWAKE.snapshot().rendering.type),name==='canvas'?'Canvas 2D':'PixiJS WebGL');
    assert.deepEqual(errors,[]);console.log('PASS preflight '+name+': interlocks, frozen combat, reentry/launch, focus and no browser errors');await page.close();

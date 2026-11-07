@@ -20,6 +20,25 @@ against the end stop before combat starts, with distinct gate and latch sounds.
 Only the projected grip is draggable. Idle/hidden levers schedule no animation
 frames, and reduced motion snaps the mechanism directly to its target.
 
+The lever camera is now strictly frontal (zero side yaw), and its resting shaft
+is vertical. A deterministic 512px packed material texture supplies corrosion
+patches, brushed strokes, pits and scratches. The shader uses dark iron, ochre
+rust and worn oxblood paint, stepped high-contrast lighting and restrained
+highlights. Material coordinates move with the actual mesh rather than sliding
+over it. No new image assets or per-frame texture generation are needed.
+
+Two soft projected-shadow passes fall on the console, with a separate dark
+hinge-contact layer. Stencil coverage prevents repeated overlapping triangles
+from over-darkening each layer. The Canvas fallback projects the same geometry
+with a simpler painted material and moving shadow.
+
+Mechanical contact submits the contact pose before one shared event triggers
+the short panel recoil and Web Audio strike. The latch combines a low thump,
+filtered impact and three decaying metal resonances; the gate and home stop are
+quieter. Panel recoil is disabled by reduced motion/screen-shake preferences.
+This aligns the software events; display/audio-device latency prevents a
+universal sub-millisecond output guarantee.
+
 Presentation uses photographic generated material plates, a shutter driven by
 Web Animations, shared Web Audio mechanical sounds, and a local CRT display.
 CRT grain is a deterministic 96px texture created once. Dither, scanlines,

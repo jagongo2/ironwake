@@ -71,8 +71,17 @@ export function createPreflight() {
   });
   const leverMotion = createLeverMotion({
     onUpdate:value=>leverView.render(value,!lever.disabled),
-    onDetent:()=>sound('detent'),onStop:kind=>sound(kind==='latch'?'lever':'switch'),reduced:reduceMotion
+    onDetent:()=>sound('detent'),onStop:kind=>{panelRecoil(kind);sound(kind==='latch'?'lever':'lever-home');},reduced:reduceMotion
   });
+  function panelRecoil(kind){
+    if(reduceMotion()||root.hidden)return;
+    const strength=kind==='latch'?1:.35;
+    const animation=consolePanel.animate([
+      {translate:'0 0',offset:0},{translate:`${strength}px ${strength*2.4}px`,offset:.09},
+      {translate:`${-strength}px ${-strength*1.4}px`,offset:.28},{translate:`${strength*.5}px ${strength*.6}px`,offset:.58},{translate:'0 0',offset:1}
+    ],{duration:210,easing:'cubic-bezier(.2,.7,.3,1)'});
+    animations.add(animation);animation.finished.catch(()=>{}).finally(()=>animations.delete(animation));
+  }
   gripHit.addEventListener('pointerenter',()=>leverView.render(leverMotion.position,!lever.disabled,true));
   gripHit.addEventListener('pointerleave',()=>leverView.render(leverMotion.position,!lever.disabled,false));
   async function animate(element, keyframes, duration, easing = 'ease') {

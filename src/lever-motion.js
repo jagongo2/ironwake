@@ -6,14 +6,16 @@ export function createLeverMotion({onUpdate, onDetent=()=>{}, onStop=()=>{}, red
   const finish=()=>{for(const resolve of waiters)resolve();waiters=[];};
   function tick(now){
     frame=0;const elapsed=last?Math.min((now-last)/1000,.04):1/60;last=now;
-    const steps=Math.max(1,Math.ceil(elapsed/(1/180))),dt=elapsed/steps;
+    const steps=Math.max(1,Math.ceil(elapsed/(1/180))),dt=elapsed/steps;let stop=null;
     for(let i=0;i<steps;i++){
       const spring=held?1050:latched?470:245,damping=held?56:latched?29:25;
       velocity+=((target-position)*spring-velocity*damping)*dt;position+=velocity*dt;
-      if(position>1){position=1;velocity=-Math.abs(velocity)*.12;if(latched&&!stopped){stopped=true;onStop('latch');finish();}}
-      if(position<0){position=0;velocity=Math.abs(velocity)*.12;if(!held&&!latched&&!stopped){stopped=true;onStop('home');}}
+      if(position>1){position=1;velocity=-Math.abs(velocity)*.12;if(latched&&!stopped){stopped=true;stop='latch';}}
+      if(position<0){position=0;velocity=Math.abs(velocity)*.12;if(!held&&!latched&&!stopped){stopped=true;stop='home';}}
     }
     publish();
+    // The contact pose is submitted before sound and panel recoil share this event.
+    if(stop){onStop(stop);if(stop==='latch')finish();}
     if(Math.abs(position-target)<.00035&&Math.abs(velocity)<.007){position=target;velocity=0;last=0;publish();if(latched&&!stopped){stopped=true;onStop('latch');}finish();}
     else frame=requestAnimationFrame(tick);
   }
