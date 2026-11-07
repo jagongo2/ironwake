@@ -513,13 +513,13 @@ function killShip(s){if(s.dead)return;s.dead=true;s.deathTime=0;explosion(s.x,s.
 function fire(s,heavy=false){if(s.dead||s.cool>0||(!heavy&&s.overheated)||(heavy&&s.heavy>0))return false;let a=s.aim;const muzzle=s.world(s.w/2,14);let x=muzzle.x+Math.cos(a)*17,y=muzzle.y+Math.sin(a)*17;const speed=heavy?280:s.team?215:370;bullets.push({x,y,px:x,py:y,vx:Math.cos(a)*speed+s.vx*.35,vy:Math.sin(a)*speed+s.vy*.35,team:s.team,owner:s,heavy,life:4});s.cool=heavy?.38:s.team?.95:.18;if(heavy)s.heavy=5.5;else s.heat=Math.min(1,s.heat+.105);if(s.heat>=1){s.overheated=true;if(!s.team)notice('포신 과열 · 냉각 중',2)}s.vx-=Math.cos(a)*(heavy?14:2.2);s.vy-=Math.sin(a)*(heavy?10:1.2);for(let i=0;i<7;i++)addParticle(x,y,Math.cos(a)*rand(30,80)+rand(-10,10),Math.sin(a)*rand(30,80)+rand(-10,10),rand(.04,.12),heavy?5:3,'fire',13);boom(heavy?.8:.27);if(!s.team){shots++;shake=Math.min(4,shake+(heavy?2:.45))}return true;}
 function hangarSound(kind){
  if(!audio||!soundOn)return;
- const now=audio.currentTime,motor=kind==='motor',impact=kind==='impact',duration=motor?.7:impact?.34:.11;
+ const now=audio.currentTime,motor=kind==='motor',impact=kind==='impact',latch=kind==='lever',detent=kind==='detent',duration=motor?.7:impact?.34:latch?.19:detent?.065:.11;
  const noise=audio.createBufferSource();noise.buffer=noiseBuffer;
- const filter=audio.createBiquadFilter();filter.type='lowpass';filter.frequency.setValueAtTime(motor?430:impact?1100:2100,now);
+ const filter=audio.createBiquadFilter();filter.type='lowpass';filter.frequency.setValueAtTime(motor?430:impact?1100:latch?850:detent?1700:2100,now);
  filter.frequency.exponentialRampToValueAtTime(motor?90:120,now+duration);
- const gain=audio.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(motor?.11:impact?.45:.12,now+.012);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
+ const gain=audio.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(motor?.11:impact?.45:latch?.22:detent?.065:.12,now+.012);gain.gain.exponentialRampToValueAtTime(.001,now+duration);
  noise.connect(filter);filter.connect(gain);gain.connect(master);noise.start(now);noise.stop(now+duration);
- if(impact){const oscillator=audio.createOscillator(),bass=audio.createGain();oscillator.frequency.setValueAtTime(65,now);oscillator.frequency.exponentialRampToValueAtTime(25,now+.22);bass.gain.setValueAtTime(.45,now);bass.gain.exponentialRampToValueAtTime(.001,now+.3);oscillator.connect(bass);bass.connect(master);oscillator.start(now);oscillator.stop(now+.31);}
+ if(impact||latch){const oscillator=audio.createOscillator(),bass=audio.createGain(),tail=impact?.3:.16;oscillator.frequency.setValueAtTime(impact?65:120,now);oscillator.frequency.exponentialRampToValueAtTime(impact?25:45,now+tail*.75);bass.gain.setValueAtTime(impact?.45:.14,now);bass.gain.exponentialRampToValueAtTime(.001,now+tail);oscillator.connect(bass);bass.connect(master);oscillator.start(now);oscillator.stop(now+tail+.01);}
 }
 function beginOperation(){
  if(state!=='briefing'&&state!=='result')return;

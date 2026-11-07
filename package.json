@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "build": "node scripts/build.cjs",
-    "test": "node tests/optimization.cjs && node tests/rcs.cjs",
+    "test": "node tests/optimization.cjs && node tests/rcs.cjs && node tests/lever-motion.cjs",
     "test:render": "node tests/rendering.cjs",
-    "test:preflight": "node tests/preflight.cjs",
+    "test:preflight": "node tests/lever-motion.cjs && node tests/preflight.cjs",
     "test:rcs": "node tests/rcs.cjs && node tests/rcs-browser.cjs"
   },
   "dependencies": {

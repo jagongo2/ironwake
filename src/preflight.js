@@ -1,4 +1,6 @@
 // The hangar owns its UI and transitions; combat stays in the original game module.
+import {createLeverView} from './lever-view.js';
+import {createLeverMotion} from './lever-motion.js';
 export function createPreflight() {
   const root = document.createElement('section');
   root.id = 'preflight';
@@ -19,8 +21,7 @@ export function createPreflight() {
       </div>
       <div class="service-interlock"><i></i><span>안전 잠금 / 계통 점검 0 / 3</span></div>
       <div class="launch-mechanism">
-        <div class="lever-track" aria-hidden="true"></div>
-        <button class="launch-lever" type="button" aria-label="출격 레버: 아래로 당기거나 Enter로 출격" aria-describedby="lever-hint" disabled><span class="lever-arm"><img src="./assets/hangar/lever-v1.png" alt="" draggable="false"></span></button>
+        <button class="launch-lever" type="button" aria-label="출격 레버: 아래로 당기거나 Enter로 출격" aria-describedby="lever-hint" disabled><canvas class="lever-canvas" aria-hidden="true"></canvas><span class="lever-grip-hit" aria-hidden="true"></span></button>
         <p id="lever-hint">세 계통을 점검한 뒤 레버를 아래로 당기세요. Enter로도 출격할 수 있습니다.</p>
       </div>
       <div class="service-crt">
@@ -40,7 +41,7 @@ export function createPreflight() {
   const switches = [...root.querySelectorAll('.system-switch')];
   const returnButton = root.querySelector('.hangar-return');
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
-  let phase = 'idle', callbacks, generation = 0, dragging = null, progress = 0;
+  let phase = 'idle', callbacks, generation = 0, dragging = null;
   const animations = new Set(), restoredInert = new Map();
   const labels = {engine: '기관', hydraulics: '유압', weapons: '무장'};
   const messages = {engine: '기관 예열 완료. 추력 응답 정상.', hydraulics: '유압 가압 완료. 착륙장치와 조종 계통 정상.', weapons: '급탄·약실 점검 완료. 무장 안전 확인.'};
@@ -57,17 +58,23 @@ export function createPreflight() {
   noiseContext.putImageData(pixels, 0, 0);
   root.querySelector('.crt-grain').style.backgroundImage = `url(${noise.toDataURL()})`;
 
-  const assets = ['shutter', 'console', 'lever'].map(name => {
+  const assets = ['shutter', 'console'].map(name => {
     const image = new Image();image.src = new URL(`../assets/hangar/${name}-v1.png`, import.meta.url).href;
     return image.decode().catch(() => {});
   });
   const setPhase = value => {phase = value;root.dataset.phase = value;};
   const sound = kind => callbacks?.sound?.(kind);
   const reduceMotion = () => motion.matches || callbacks?.motion === false;
-  function setThrow(value) {
-    progress = Math.max(0, Math.min(1, value));
-    lever.style.setProperty('--throw', progress);
-  }
+  const gripHit = root.querySelector('.lever-grip-hit');
+  const leverView = createLeverView(root.querySelector('.lever-canvas'),box=>{
+    Object.assign(gripHit.style,{left:`${box.left*100}%`,top:`${box.top*100}%`,width:`${box.width*100}%`,height:`${box.height*100}%`});
+  });
+  const leverMotion = createLeverMotion({
+    onUpdate:value=>leverView.render(value,!lever.disabled),
+    onDetent:()=>sound('detent'),onStop:kind=>sound(kind==='latch'?'lever':'switch'),reduced:reduceMotion
+  });
+  gripHit.addEventListener('pointerenter',()=>leverView.render(leverMotion.position,!lever.disabled,true));
+  gripHit.addEventListener('pointerleave',()=>leverView.render(leverMotion.position,!lever.disabled,false));
   async function animate(element, keyframes, duration, easing = 'ease') {
     const animation = element.animate(keyframes, {duration: reduceMotion() ? Math.min(duration, 100) : duration, easing, fill: 'forwards'});
     animations.add(animation);
@@ -99,10 +106,12 @@ export function createPreflight() {
     }
     root.querySelector('.callout-engine').textContent = `THRUST / ${active.some(button=>button.dataset.system==='engine') ? 'ONLINE' : 'STANDBY'}`;
     root.querySelector('.service-log').textContent = ready ? '출격 승인. 좌측 하단 발진 레버를 아래로 당기십시오.' : changed ? (changed.getAttribute('aria-pressed') === 'true' ? messages[changed.dataset.system] : `${labels[changed.dataset.system]} 계통이 대기 상태로 전환되었습니다.`) : '좌측 스위치로 세 계통의 점검을 완료하십시오.';
-    if (!ready) setThrow(0);
+    if (!ready) {dragging=null;root.classList.remove('is-dragging');leverMotion.reset();}
+    leverView.render(leverMotion.position,ready);
   }
   function finish() {
     root.hidden = true;consolePanel.hidden = true;root.classList.remove('is-dragging');
+    leverMotion.reset();
     document.documentElement.classList.remove('in-preflight','preflight-covered');isolate(false);setPhase('idle');
   }
   async function open(nextCallbacks) {
@@ -110,7 +119,7 @@ export function createPreflight() {
     callbacks = nextCallbacks;const current = ++generation;
     root.hidden = false;consolePanel.hidden = true;consolePanel.style.opacity = '1';consolePanel.style.transform = 'none';
     document.documentElement.classList.add('in-preflight');isolate(true);setPhase('closing');
-    shutter.style.transform = 'translateY(-105%)';setThrow(0);
+    shutter.style.transform = 'translateY(-105%)';leverMotion.reset();
     for (const button of switches) button.setAttribute('aria-pressed', 'false');
     root.querySelector('.service-ship').src = callbacks.ship;
     updateChecks();
@@ -140,8 +149,8 @@ export function createPreflight() {
     }
     if(phase !== 'service')return;
     if(launch && lever.disabled)return;
-    setPhase(launch?'launching':'returning');dragging=null;root.classList.remove('is-dragging');
-    if(launch){setThrow(1);sound('lever');}
+    setPhase(launch?'latching':'returning');dragging=null;root.classList.remove('is-dragging');
+    if(launch){await leverMotion.latch();setPhase('launching');}else leverMotion.reset();
     await animate(consolePanel, [{opacity:1},{opacity:0}], launch?260:140);
     consolePanel.hidden=true;
     // Combat starts only after the opaque shutter covers the entire scene.
@@ -158,20 +167,22 @@ export function createPreflight() {
   returnButton.addEventListener('click',()=>leave(false));
   lever.addEventListener('pointerdown',event=>{
     if(phase !== 'service'||lever.disabled||event.button!==0)return;
-    event.preventDefault();dragging={id:event.pointerId,start:event.clientY};lever.setPointerCapture(event.pointerId);root.classList.add('is-dragging');
+    if(!gripHit.contains(event.target))return;
+    event.preventDefault();dragging={id:event.pointerId,start:event.clientY,position:leverMotion.begin()};lever.setPointerCapture(event.pointerId);root.classList.add('is-dragging');
   });
   lever.addEventListener('pointermove',event=>{
     if(!dragging||event.pointerId!==dragging.id)return;
-    setThrow((event.clientY-dragging.start)/Math.max(60,lever.getBoundingClientRect().height*.45));
+    if(lever.disabled||phase!=='service'){dragging=null;leverMotion.returnHome();return;}
+    leverMotion.pull(dragging.position+(event.clientY-dragging.start)/Math.max(70,lever.getBoundingClientRect().height*.55));
   });
   const release=event=>{
     if(!dragging||event.pointerId!==dragging.id)return;
     dragging=null;root.classList.remove('is-dragging');
-    if(event.type==='pointerup'&&progress>=.78)leave(true);else setThrow(0);
+    if(event.type==='pointerup'){if(leverMotion.release())leave(true);}else leverMotion.returnHome();
   };
   lever.addEventListener('pointerup',release);lever.addEventListener('pointercancel',release);lever.addEventListener('lostpointercapture',release);
   lever.addEventListener('click',event=>{if(event.detail===0)leave(true);});
-  window.addEventListener('blur',()=>{dragging=null;root.classList.remove('is-dragging');if(phase==='service')setThrow(0);});
+  window.addEventListener('blur',()=>{dragging=null;root.classList.remove('is-dragging');if(phase==='service')leverMotion.returnHome();});
   window.addEventListener('keydown',event=>{
     if(phase==='idle')return;
     if(event.code==='Escape'){event.preventDefault();event.stopImmediatePropagation();leave(false);return;}

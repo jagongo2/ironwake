@@ -16,8 +16,9 @@ const server=http.createServer((req,res)=>{
  const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
  const url=process.argv[2]||'http://127.0.0.1:'+server.address().port+'/';
  try{
-  for(const [name,options] of [['desktop',{viewport:{width:1600,height:900}}],['reduced',{viewport:{width:900,height:900},reducedMotion:'reduce'}],['portrait',{viewport:{width:390,height:844},reducedMotion:'reduce'}],['canvas',{viewport:{width:1280,height:720},reducedMotion:'reduce'}]]){
-   const page=await browser.newPage(options),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  for(const [name,options] of [['desktop',{viewport:{width:1600,height:900}}],['reduced',{viewport:{width:900,height:900},reducedMotion:'reduce'}],['portrait',{viewport:{width:390,height:844},reducedMotion:'reduce'}],['canvas',{viewport:{width:1280,height:720},reducedMotion:'reduce'}],['lever-fallback',{viewport:{width:1280,height:720},reducedMotion:'reduce'}]]){
+   const page=await browser.newPage(options),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',message=>{if(message.type()==='warning'&&message.text().startsWith('3D lever'))console.log(message.text());});
+   if(name==='lever-fallback')await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){if(this.classList.contains('lever-canvas')&&type==='webgl')return null;return original.call(this,type,...args);};});
    const target=new URL(url);if(name==='canvas')target.searchParams.set('renderer','canvas');
    await page.goto(target.href,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.IRONWAKE?.snapshot().frames>5);
    if(name==='desktop'){
@@ -26,6 +27,8 @@ const server=http.createServer((req,res)=>{
    }
    const open=async()=>{await page.locator('#start').click();await page.waitForFunction(()=>document.getElementById('preflight').dataset.phase==='service');assert.equal((await page.evaluate(()=>window.IRONWAKE.snapshot())).state,'preflight');};
    await open();assert.equal(await page.locator('.launch-lever').isDisabled(),true);
+   assert.equal(await page.locator('.lever-canvas').getAttribute('data-renderer'),name==='lever-fallback'?'canvas3d':'webgl3d');
+   assert.equal(await page.locator('.launch-lever img').count(),0,'lever uses geometry rather than a rotated image');
    const before=await page.evaluate(()=>window.IRONWAKE.snapshot().frames);await page.keyboard.press('r');await page.waitForTimeout(150);
    assert.equal(await page.evaluate(()=>window.IRONWAKE.snapshot().frames),before,'combat rendering stopped in hangar');
    for(const button of await page.locator('.system-switch').all())await button.click();
@@ -37,15 +40,23 @@ const server=http.createServer((req,res)=>{
    if(name==='desktop'){
     const rate=await page.evaluate(()=>new Promise(resolve=>{let first=0,count=0;const tick=now=>{if(!first)first=now;count++;if(now-first<1200)requestAnimationFrame(tick);else resolve(1000*(count-1)/(now-first));};requestAnimationFrame(tick);}));
     console.log('HANGAR FPS '+rate.toFixed(1)+' (test browser, not a cross-device guarantee)');
-    const lever=await page.locator('.launch-lever').boundingBox(),x=lever.x+lever.width/2,y=lever.y+20;
+    const lever=await page.locator('.launch-lever').boundingBox(),grip=await page.locator('.lever-grip-hit').boundingBox(),x=grip.x+grip.width/2,y=grip.y+grip.height/2;
     await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y+15,{steps:4});await page.mouse.up();
     assert.equal(await page.locator('#preflight').getAttribute('data-phase'),'service','short pull returns safely');
+    await page.waitForFunction(()=>Number(document.querySelector('.lever-canvas').dataset.position)<.002);
+    const resting=await page.locator('.lever-grip-hit').boundingBox(),rx=resting.x+resting.width/2,ry=resting.y+resting.height/2;
+    await page.mouse.move(rx,ry);await page.mouse.down();await page.mouse.move(rx,ry+lever.height*.55*.78,{steps:10});await page.waitForTimeout(160);
+    const pulled=await page.locator('.lever-grip-hit').boundingBox();assert.ok(pulled.y>resting.y+10,'grip moves down through a 3D arc');assert.ok(pulled.width>resting.width,'grip grows as it approaches camera');
+    await page.screenshot({path:path.join(root,'artifacts','lever-mid-pull.png')});await page.mouse.up();
     await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('preflight').hidden);
     assert.equal(await page.evaluate(()=>window.IRONWAKE.snapshot().state),'briefing');
     await open();assert.equal(await page.locator('.launch-lever').isDisabled(),true,'checks reset on reentry');
     for(const button of await page.locator('.system-switch').all())await button.click();
-    const second=await page.locator('.launch-lever').boundingBox(),sx=second.x+second.width/2,sy=second.y+20;
-    await page.mouse.move(sx,sy);await page.mouse.down();await page.mouse.move(sx,sy+Math.max(75,second.height*.5),{steps:10});await page.mouse.up();
+    const second=await page.locator('.launch-lever').boundingBox(),handle=await page.locator('.lever-grip-hit').boundingBox(),sx=handle.x+handle.width/2,sy=handle.y+handle.height/2;
+    await page.mouse.move(sx,sy);await page.mouse.down();await page.mouse.move(sx,sy+Math.max(75,second.height*.58),{steps:10});await page.mouse.up();
+   }else if(name==='portrait'){
+    const button=await page.locator('.launch-lever').boundingBox(),grip=await page.locator('.lever-grip-hit').boundingBox(),x=grip.x+grip.width/2,y=grip.y+grip.height/2;
+    await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y+Math.max(75,button.height*.58),{steps:8});await page.screenshot({path:path.join(root,'artifacts','lever-portrait-full-pull.png')});await page.mouse.up();
    }else{await page.locator('.launch-lever').focus();await page.keyboard.press('Enter');}
    await page.waitForFunction(()=>document.getElementById('preflight').hidden&&window.IRONWAKE.snapshot().state==='playing');
    assert.equal(await page.locator('#game').evaluate(el=>el.inert),false);assert.equal(await page.locator('#game').evaluate(el=>getComputedStyle(el).filter),'none');

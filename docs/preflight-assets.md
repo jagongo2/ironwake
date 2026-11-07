@@ -8,6 +8,18 @@ previous menu. Checks reset on reentry. Combat is not initialized until launch;
 its renderer stops while the hangar is open. Covered title/HUD animations are
 paused and hidden until the shutter opens, avoiding background compositing work.
 
+The launch lever now uses actual 3D cylinder/sphere/box meshes in a small,
+transparent WebGL canvas (`src/lever-view.js`). The T-grip, chrome shaft and
+hinge rotate together about a physical pivot, with perspective, lighting and a
+projected moving shadow. A Canvas renderer projects the same mesh if WebGL is
+unavailable. The camera remains fixed; the handle grows as it approaches it.
+
+`src/lever-motion.js` provides a damped spring, cam resistance from 60–82% input,
+and an 86% latch threshold. A short pull springs home. A complete pull latches
+against the end stop before combat starts, with distinct gate and latch sounds.
+Only the projected grip is draggable. Idle/hidden levers schedule no animation
+frames, and reduced motion snaps the mechanism directly to its target.
+
 Presentation uses photographic generated material plates, a shutter driven by
 Web Animations, shared Web Audio mechanical sounds, and a local CRT display.
 CRT grain is a deterministic 96px texture created once. Dither, scanlines,
@@ -23,7 +35,8 @@ was edited. Transparent alpha on the lever PNG is preserved.
 
 - `assets/hangar/shutter-v1.png`: 1536 × 1024 steel shutter.
 - `assets/hangar/console-v1.png`: 1672 × 941 maintenance console.
-- `assets/hangar/lever-v1.png`: 1024 × 1536 isolated lever, RGBA.
+- `assets/hangar/lever-v1.png`: 1024 × 1536 isolated lever, RGBA. Historical
+  source retained in Git; no longer loaded or deployed after the 3D replacement.
 
 ## Original prompts
 
