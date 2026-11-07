@@ -168,11 +168,11 @@ function emitEngine(s,e,dt){
 }
 function rcsHiss(){if(!audio||!soundOn)return;const t=audio.currentTime,n=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();n.buffer=noiseBuffer;f.type='highpass';f.frequency.value=1300;g.gain.setValueAtTime(.04,t);g.gain.exponentialRampToValueAtTime(.001,t+.085);n.connect(f);f.connect(g);g.connect(master);n.start(t);n.stop(t+.09);}
 function emitRCS(s,dt){const r=s.rcs;if(!r)return;if(r.kicked)rcsHiss();const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025){r.emit=0;return;}
- r.emit+=dt*(18+28*power);const direction=Math.sign(r.torque)||r.command||1,cs=Math.cos(s.angle),sn=Math.sin(s.angle);
- while(r.emit>=1){r.emit--;for(let side=0;side<2;side++){const exhaust=side?-direction:direction,p=s.world(side?s.w-11:10,exhaust>0?34:16),speed=70+power*55;addParticle(p.x,p.y,s.vx-sn*exhaust*speed+rand(-6,6),s.vy+cs*exhaust*speed+rand(-6,6),rand(.07,.13),1,'rcs',7);}}
+ r.emit+=dt*(18+28*power);const direction=r.jetDirection||Math.sign(r.torque)||r.command||1,cs=Math.cos(s.angle),sn=Math.sin(s.angle);
+ while(r.emit>=1){r.emit--;for(let side=0;side<2;side++){const exhaust=side?-direction:direction;if(!window.__ironwakeRCS?.nozzleAlive(s,side,exhaust))continue;const p=s.world(side?s.w-11:10,exhaust>0?34:16),speed=70+power*55;addParticle(p.x,p.y,s.vx-sn*exhaust*speed+rand(-6,6),s.vy+cs*exhaust*speed+rand(-6,6),rand(.07,.13),1,'rcs',7);}}
 }
-function drawRCS(s){const r=s.rcs;if(!r||s.dead)return;const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025)return;const direction=Math.sign(r.torque)||r.command||1,length=3+power*10+(Math.sin(r.clock*91)+1)*.7;
- for(let side=0;side<2;side++){const exhaust=side?-direction:direction,x=(side?s.w-11:10)-s.w/2,y=(exhaust>0?34:16)-s.h/2;rect(x-2,y-1,4,2,17);rect(x-1,y,2,exhaust>0?3:1,'#efffff');for(let j=0;j<length;j+=2){const width=j<3?3:j<7?2:1;rect(x-width/2,y+exhaust*(j+2),width,2,j<3?'#eefbff':j<7?'#aad9e3':'#668f9b');}}
+function drawRCS(s){const r=s.rcs;if(!r||s.dead)return;const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025)return;const direction=r.jetDirection||Math.sign(r.torque)||r.command||1,length=3+power*10+(Math.sin(r.clock*91)+1)*.7;
+ for(let side=0;side<2;side++){const exhaust=side?-direction:direction;if(!window.__ironwakeRCS?.nozzleAlive(s,side,exhaust))continue;const x=(side?s.w-11:10)-s.w/2,y=(exhaust>0?34:16)-s.h/2;rect(x-2,y-1,4,2,17);rect(x-1,y,2,exhaust>0?3:1,'#efffff');for(let j=0;j<length;j+=2){const width=j<3?3:j<7?2:1;rect(x-width/2,y+exhaust*(j+2),width,2,j<3?'#eefbff':j<7?'#aad9e3':'#668f9b');}}
 }
 function updateJetGas(dt){for(let i=jetGas.length-1;i>=0;i--){const p=jetGas[i];p.life-=dt;if(p.life<=0){jetGas[i]=jetGas[jetGas.length-1];jetGas.pop();continue}
  const age=p.max-p.life,n=fireNoise[(p.seed+(age*90|0)*17)&2047]-.5;

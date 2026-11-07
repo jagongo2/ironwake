@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 (async()=>{
- const {stepRCS,stepRCSSway,RCS_TUNING}=await import('../src/rcs.js');
- const body=()=>({angle:0,av:0,count:1000,initial:1000,inertiaRadius:800,engineRatio:1,grounded:false,resting:false,dead:false});
+ const {stepRCS,stepRCSSway,rcsNozzleAlive,RCS_TUNING}=await import('../src/rcs.js');
+ const body=()=>({angle:0,av:0,count:1000,initial:1000,inertiaRadius:800,engineRatio:1,grounded:false,resting:false,dead:false,w:104,h:48,mat:new Uint8Array(104*48).fill(1),hp:new Uint8Array(104*48).fill(2)});
  const run=(s,command,seconds,dt=1/120)=>{const frames=[];for(let i=0;i<Math.round(seconds/dt);i++){stepRCS(s,command,dt);s.angle+=s.av*dt;frames.push({angle:s.angle,av:s.av,torque:s.rcs?.torque});}return frames;};
  const idle=body();assert.equal(stepRCS(idle,0,1/60),false);assert.equal(idle.rcs,undefined);
  const right=body(),left=body();const r=run(right,1,.7),l=run(left,-1,.7);
@@ -18,6 +18,11 @@ const assert=require('node:assert/strict');
  const dead=body();dead.dead=true;dead.av=.5;stepRCS(dead,1,1/60);assert.equal(dead.av,.5,'dead hull keeps collision momentum');
  const weak=body();weak.engineRatio=.25;stepRCS(weak,1,1/60);const intact=body();stepRCS(intact,1,1/60);assert.ok(weak.av<intact.av*.4,'damage reduces authority');
  const light=body(),heavy=body();stepRCS(light,1,1/60);stepRCS(heavy,1,1/60);light.count=650;stepRCS(light,1,1/60);stepRCS(heavy,1,1/60);assert.ok(light.av>heavy.av,'lower hull inertia responds faster to the same torque');
+ const damaged=body();damaged.mat[10+34*damaged.w]=0;
+ assert.equal(rcsNozzleAlive(damaged,0,1),false,'destroyed lower port nozzle');assert.equal(rcsNozzleAlive(damaged,0,-1),true,'upper port nozzle survives');
+ stepRCS(damaged,1,1/60);assert.ok(Math.abs(damaged.av-intact.av*.5)<1e-12,'one nozzle supplies half the rotational authority');
+ const opposite=body();opposite.mat[10+34*opposite.w]=0;stepRCS(opposite,-1,1/60);assert.ok(Math.abs(opposite.av+intact.av)<1e-12,'opposite intact pair retains authority');
+ const destroyed=body();destroyed.mat.fill(0);stepRCS(destroyed,1,1/60);assert.equal(destroyed.av,0);assert.equal(destroyed.rcs.kicked,false);assert.equal(destroyed.rcs.torque,0,'destroyed nozzles cannot create torque');
  for(let i=0;i<240;i++)stepRCSSway(long.rcs,1/60,true);assert.ok(Math.abs(long.rcs.cameraX)<1.6,'bounded sway');
  stepRCSSway(long.rcs,1/60,false);assert.equal(long.rcs.cameraX,0);assert.equal(long.rcs.cameraVelocity,0);
  console.log(JSON.stringify({peakDegrees:peak*180/Math.PI,returnOvershootDegrees:Math.min(...recovery.map(f=>f.angle))*180/Math.PI,settledDegrees:right.angle*180/Math.PI}));

@@ -7,6 +7,14 @@ window.__rcsTest={
  step(n){for(let i=0;i<n;i++)update(1/60);render();return {...window.IRONWAKE.attitude(),x:player.x,y:player.y,vx:player.vx,vy:player.vy,grounded:player.grounded,rcsParticles:particles.filter(p=>p.type==='rcs').length};},
  shake(value){options.shake=value;},
  ground(){player.gearTime=2.1;player.gearTarget=true;player.y=FLOOR-gearClearance(player);player.vy=0;player.grounded=player.resting=true;},
+ damageNozzle(side,exhaust){const p=player.world(side?player.w-11:10,exhaust>0?34:16);damage(player,p.x,p.y,3,10);return window.__ironwakeRCS.nozzleAlive(player,side,exhaust);},
+ probeNozzles(direction){const add=addParticle,draw=rect,previous=player.rcs,emissions=[],flames=[];
+  player.rcs={emit:0,effort:1,flare:0,torque:direction*18,command:direction,jetDirection:direction,clock:0};
+  addParticle=(x,y)=>{const p=player.local(x,y);emissions.push(p.x<player.w/2?0:1);};
+  rect=(x,y,w,h,c)=>{if(w===4&&h===2&&c===17)flames.push(x+2<0?0:1);};
+  try{emitRCS(player,.1);drawRCS(player);}finally{addParticle=add;rect=draw;player.rcs=previous;}
+  return {emissions:[...new Set(emissions)],flames};
+ },
  fireAtPointer(){player.cool=0;player.heat=0;player.overheated=false;const vx=player.vx,vy=player.vy;fire(player);const b=bullets.at(-1),m=player.world(player.w/2,14);return {aim:player.aim,expected:Math.atan2(pointer.y+cam.y-m.y,pointer.x+cam.x-m.x),bulletDirection:Math.atan2(b.vy-vy*.35,b.vx-vx*.35)};}
 };
 `;
@@ -43,7 +51,15 @@ const server=http.createServer((req,res)=>{
    await page.evaluate(()=>{window.__rcsTest.prepare();window.__rcsTest.ground();});await page.keyboard.down('e');const grounded=await page.evaluate(()=>window.__rcsTest.step(20));assert.ok(grounded.grounded);assert.ok(Math.abs(grounded.angle)<.02);await page.keyboard.up('e');
    await page.evaluate(()=>{window.__rcsTest.prepare();window.__rcsTest.shake(true);});await page.keyboard.down('e');const sway=await page.evaluate(()=>window.__rcsTest.step(8));assert.ok(Math.abs(sway.cameraSway)>0&&Math.abs(sway.cameraSway)<1.6);
    await page.evaluate(()=>window.__rcsTest.shake(false));const steady=await page.evaluate(()=>window.__rcsTest.step(1));assert.equal(steady.cameraSway,0);await page.keyboard.up('e');
-   results.push({first,turn,left,recovered});assert.deepEqual(errors,[]);await page.close();
+   results.push({first,turn,left,recovered});
+   await page.evaluate(()=>window.__rcsTest.prepare());
+   assert.deepEqual(await page.evaluate(()=>window.__rcsTest.probeNozzles(1)),{emissions:[0,1],flames:[0,1]});
+   assert.equal(await page.evaluate(()=>window.__rcsTest.damageNozzle(0,1)),false);
+   assert.deepEqual(await page.evaluate(()=>window.__rcsTest.probeNozzles(1)),{emissions:[1],flames:[1]},'destroyed lower port emits no particles or flame');
+   assert.deepEqual(await page.evaluate(()=>window.__rcsTest.probeNozzles(-1)),{emissions:[0,1],flames:[0,1]},'other intact nozzles still fire');
+   assert.equal(await page.evaluate(()=>window.__rcsTest.damageNozzle(1,-1)),false);
+   assert.deepEqual(await page.evaluate(()=>window.__rcsTest.probeNozzles(1)),{emissions:[],flames:[]},'destroyed pair cannot render ghost jets');
+   assert.deepEqual(errors,[]);await page.close();
   }
   assert.deepEqual(results[0],results[1],'same RCS physics on both renderers');
   console.log('PASS real Q/E input, snap, drift, braking, opposite/simultaneous keys, plume rendering, landing, world aiming, motion preference and identical Canvas/WebGL physics');

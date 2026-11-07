@@ -10,7 +10,7 @@ export function createPreflight() {
     <p class="hangar-loading" role="status">격납고 차폐문 구동 중<span>HANGAR / STAND BY</span></p>
     <div class="hangar-shutter" aria-hidden="true"><div class="shutter-mark"><span>SECTOR 07</span><strong>STAND CLEAR</strong><small>격납고 차폐문 · H-04</small></div></div>
     <div class="service-console" hidden>
-      <header class="service-heading"><span>IRONWAKE / HANGAR 07</span><h2>출격 전 정비</h2><p>기함 K-17 · 발진 준비 절차</p></header>
+      <header class="service-heading"><h2>출격 전 정비</h2></header>
       <button class="hangar-return" type="button">ESC / 복귀</button>
       <div class="service-switches" aria-label="출격 전 계통 점검">
         <button class="system-switch" type="button" aria-pressed="false" data-system="engine"><span><small>01 / POWER</small><strong>기관 예열</strong></span><i class="switch-led"></i><span class="switch-rocker" aria-hidden="true"><i></i></span></button>
@@ -19,10 +19,9 @@ export function createPreflight() {
       </div>
       <div class="service-interlock"><i></i><span>안전 잠금 / 계통 점검 0 / 3</span></div>
       <div class="launch-mechanism">
-        <span class="lever-plate">LAUNCH CONTROL</span>
-        <div class="lever-track" aria-hidden="true"><span>SAFE</span><span>ENGAGE</span></div>
+        <div class="lever-track" aria-hidden="true"></div>
         <button class="launch-lever" type="button" aria-label="출격 레버: 아래로 당기거나 Enter로 출격" aria-describedby="lever-hint" disabled><span class="lever-arm"><img src="./assets/hangar/lever-v1.png" alt="" draggable="false"></span></button>
-        <p id="lever-hint">계통 점검 후 레버 해제</p>
+        <p id="lever-hint">세 계통을 점검한 뒤 레버를 아래로 당기세요. Enter로도 출격할 수 있습니다.</p>
       </div>
       <div class="service-crt">
         <div class="crt-readout"><div class="crt-topline"><span>K-17 / SYSTEM DIAGNOSTICS</span><span class="crt-signal">● LINK</span></div><h3>출격 승인 대기</h3><p class="crt-subtitle">PRE-FLIGHT SYSTEM CHECK</p>
@@ -93,7 +92,6 @@ export function createPreflight() {
     root.querySelector('.service-interlock span').textContent = ready ? '정상 / 발진 잠금 해제' : `안전 잠금 / 계통 점검 ${active.length} / 3`;
     root.querySelector('.check-count').textContent = `CHECK 0${active.length} / 03`;
     root.querySelector('.crt-readout h3').textContent = ready ? '전 계통 정상' : '출격 승인 대기';
-    root.querySelector('#lever-hint').textContent = ready ? '손잡이를 아래로 당겨 출격 · Enter' : '계통 점검 후 레버 해제';
     for (const button of switches) {
       const key = button.dataset.system, checked = button.getAttribute('aria-pressed') === 'true';
       const readout = root.querySelector(`[data-readout="${key}"]`);

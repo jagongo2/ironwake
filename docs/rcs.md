@@ -18,6 +18,11 @@ Enemy control and existing combat rules are unchanged.
 - A deterministic ±2.5% pressure ripple applies only to demanded torque.
 - Changes in surviving hull inertia affect acceleration; engine integrity
   scales control authority. A dead or supported hull receives no RCS torque.
+- Each upper/lower port/starboard nozzle checks the actual surviving material
+  and HP cell at its attachment. A destroyed nozzle emits neither flame nor new
+  gas particles. Torque and the initial impulse scale with surviving nozzles in
+  the requested directional pair; one missing nozzle halves that pair's output.
+  Counter-thrust uses its own opposite pair, so its damage is independent.
 - In the reference 120Hz controller test, hold overshoot is about 49.1° and
   release overshoot about -4.1°, settling near zero in 2.5 seconds.
 
@@ -28,7 +33,7 @@ It never assigns the angle or rotates only the artwork.
 
 ## Translation and presentation
 
-Opposing fore/aft RCS jets form a torque couple. Their net lateral force is zero.
+The intact opposing fore/aft RCS jets form a torque couple. Their net lateral force is zero.
 Lateral drift instead comes from the main lift vector rotating with the hull:
 `horizontal += sin(bank) * lift`, `vertical += (1-cos(bank)) * lift` relative to
 the previous upright model. Banking trades vertical lift for evasion, and W/S,
@@ -52,6 +57,7 @@ the mouse in world space while the hull turns.
   RCS response, reversal, spam limit, mass/damage, grounding and sway tests.
 - `npm run test:rcs`: real Q/E presses, release/reversal, simultaneous keys,
   rotated thrust drift, RCS particles, ground support and projectile aiming,
-  identical Canvas/WebGL physics, and the screen-shake setting.
+  identical Canvas/WebGL physics, the screen-shake setting, and actual nozzle
+  damage suppressing both particle creation and immediate flame drawing.
 - `npm run test:render`: existing classic-art and rendering regression checks.
 - `npm run test:preflight`: the shutter/hangar flow remains available.
