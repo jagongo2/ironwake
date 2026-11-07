@@ -25,7 +25,7 @@ export function createPreflight() {
       </div>
       <div class="service-crt">
         <div class="crt-readout"><div class="crt-topline"><span>K-17 / SYSTEM DIAGNOSTICS</span><span class="crt-signal">● LINK</span></div><h3>출격 승인 대기</h3><p class="crt-subtitle">PRE-FLIGHT SYSTEM CHECK</p>
-          <div class="ship-diagnostic"><div class="diagnostic-grid"></div><img class="service-ship" alt="K-17 함선 측면"><span class="ship-callout callout-engine">THRUST / STANDBY</span><span class="ship-callout callout-hull">HULL INTEGRITY / 100%</span></div>
+          <div class="ship-diagnostic"><div class="diagnostic-grid"></div><img class="service-ship" draggable="false" alt="K-17 함선 측면"><span class="ship-callout callout-engine">THRUST / STANDBY</span><span class="ship-callout callout-hull">HULL INTEGRITY / 100%</span></div>
           <div class="crt-systems"><span data-readout="engine">기관 · 대기</span><span data-readout="hydraulics">유압 · 대기</span><span data-readout="weapons">무장 · 대기</span></div>
           <p class="service-log" role="status" aria-live="polite">좌측 스위치로 세 계통의 점검을 완료하십시오.</p><div class="crt-bottomline"><span>SECTOR 07 / 잿빛 회랑</span><span class="check-count">CHECK 00 / 03</span></div>
         </div><div class="crt-grain" aria-hidden="true"></div>
