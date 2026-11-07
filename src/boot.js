@@ -1,5 +1,6 @@
 // GPU presentation is independent from the fixed-step JavaScript simulation.
 import { createRenderer } from '../assets/renderer.js';
+import { createPreflight } from './preflight.js';
 
 if(new URLSearchParams(location.search).get('renderer')==='canvas'){
   window.__ironwakeGraphics=null;
@@ -13,4 +14,5 @@ if(new URLSearchParams(location.search).get('renderer')==='canvas'){
   window.__ironwakeGraphics = null;
 }
 await document.fonts?.load('10px DepartureMono');
+window.__ironwakePreflight = createPreflight();
 await import('./game.js');
