@@ -29,6 +29,25 @@ are made by the game. Original license notices are retained beside the samples.
 - Conversion: `ffmpeg -ss 2 -t 8 -i source.mp3 -af highpass=f=28,lowpass=f=2800
   -ac 1 -ar 32000 -c:a libvorbis -q:a 3 diesel-loop.ogg`.
 
+## Combat recordings - added 2026-11-09
+
+The following three recordings are CC0 1.0. The creator pages were checked before
+use. The public high-quality MP3 previews are the input material, not the
+login-only original downloads. They are edited and converted into local mono
+32kHz Vorbis files (four files, 74,270 bytes total).
+
+| Creator / source | Shipped derivative | Edit |
+| --- | --- | --- |
+| [michorvath - AR15 rifle shot](https://freesound.org/people/michorvath/sounds/427596/) | `combat/cannon-light.ogg` | One report at 0.070-0.780s, pitch 0.75, filtered and faded. This is a stylized cannon layer derived from a rifle, not a recording of a 57mm gun. |
+| [qubodup - Cannon Shot](https://freesound.org/people/qubodup/sounds/187767/) | `combat/cannon-heavy.ogg` | First report at 0.150-2.500s, pitch 0.85, filtered and faded. The creator identifies a US government video as the public-domain source; the gun caliber is not established here. |
+| [sidohzen - Explosion with debris - authentic. 4kg TNT](https://freesound.org/people/sidohzen/sounds/165808/) | `combat/blast-impact.ogg`, `combat/blast-wreck.ogg` | Demolition recording, trimmed to 2.165-3.120s / 2.165-6.165s, pitch 1.15 / 0.90. The lead-in before the explosion is excluded. |
+
+License: https://creativecommons.org/publicdomain/zero/1.0/ . Exact public preview
+URLs, input SHA-256 hashes and processing parameters are in
+[`combat/sources.json`](combat/sources.json). Rebuild with ffmpeg installed:
+`node scripts/prepare-combat-audio.cjs --download`. Cached input files stay in
+the ignored `artifacts/audio-sources/` directory and are not deployed.
+
 Pressure transients, bass, air, fallback material sounds and supporting engine
 layers are original deterministic synthesis in `src/sound.js`. No HighFleet
-game audio has been extracted or included.
+game audio or audio from the reference videos has been extracted or included.

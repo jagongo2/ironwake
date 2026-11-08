@@ -1,4 +1,4 @@
-# Mechanical sound pass — 2026-11-08
+# Mechanical and combat sound - 2026-11-09
 
 The 0.11 WebGL game's simulation and visuals are unchanged. The original common
 noise/sine `boom()` has been split into mechanical events, reusable sound layers,
@@ -6,11 +6,11 @@ and continuous engine/fire beds in `src/sound.js`.
 
 | Event | Layers and response |
 | --- | --- |
-| 57mm | short muzzle transient, metal action, brief gas release |
-| 180mm | slower low-frequency body, pressure, heavy plate action, longer tail |
-| Explosion | broadband body, low pressure, debris/metal and decay, scaled by size |
+| 57mm | edited rifle recording, short pressure layer, delayed metal action and gas release |
+| 180mm | edited cannon recording, slower pressure body, plate action and longer recorded tail |
+| Explosion | trimmed demolition recording and pressure; impact, fuel and wreck events have different rates, gas and debris layers |
 | Hull impact | recorded metal/plate plus short resonances; no automatic explosion sound |
-| Engine | actual diesel recording, low rumble, mechanical harmonics and air; throttle and surviving engine ratio affect gain/pitch |
+| Engine | actual diesel recording, low rumble, mechanical harmonics and pulsed air; exhaust responds faster and more strongly to thrust than rotor speed, and damage reduces output |
 | Burning fuel | quiet crackle/air bed tied to the player's active fuel fire |
 | RCS | brief gas hiss on the existing impulse event |
 | Gear | servo/metal action and light mechanical latches |
@@ -19,10 +19,12 @@ and continuous engine/fire beds in `src/sound.js`.
 
 The new sources are selected CC0 material samples and a diesel field recording,
 not recordings made by this project and not original HighFleet sounds.
-See [asset provenance](../assets/audio/CREDITS.md). The ten encoded sounds are
-about 120 KiB total; decoded buffers and generated beds add a few MiB of memory.
-The low-frequency/pressure and fallback layers are synthesized rather than
-claimed to be recorded gunfire. Small sample-rate variations avoid exact repeats.
+See [asset provenance](../assets/audio/CREDITS.md). Four additional recording edits
+add about 73 KiB; all fourteen encoded sounds total about 193 KiB. The edits decode
+to about 1.1 MiB of mono float PCM. Buffers are retained and reused, with small
+playback-rate variations. Gun recordings are source material for stylized weapons,
+not claimed to be literal recordings of the game's calibers. Pressure, gas and
+fallback layers remain synthesized.
 
 ## Runtime and synchronization
 
@@ -33,7 +35,11 @@ claimed to be recorded gunfire. Small sample-rate variations avoid exact repeats
 - The sound PRNG is private, so enabling audio does not consume physics randomness.
 - At most 28 tracked event voices, with priorities and short fades on retirement.
   Nearby repeated impacts/explosions are coalesced. Continuous beds use five loops.
-- Game positions drive stereo pan and distance attenuation; UI sounds stay centered.
+- Game positions drive stereo pan, distance attenuation and a single low-pass
+  filter per event. Distant sounds lose treble; UI sounds stay centered.
+- Nearby heavy shots and large explosions briefly lower only the continuous beds
+  using scheduled gain automation, recovering smoothly after 160-260ms. Further
+  gunshots and UI clicks are not turned down by that bed automation.
 - Engine parameters update at most 30Hz. Master high-pass, compression and a bounded
   soft-saturation curve control low-frequency build-up and simultaneous events.
 - The volume slider and M/button mute remain. Muting fades and suspends the audio
@@ -49,8 +55,9 @@ claimed to be recorded gunfire. Small sample-rate variations avoid exact repeats
 `npm test` keeps the previous deterministic flight, collision, landing, combat,
 fluid, RCS and lever checks. `npm run test:audio` uses real browser AudioContexts
 and OfflineAudioContext to verify sample decode, private randomness, distinct
-weapon/explosion tails, stereo placement, 28-voice pressure, finite PCM bounded
-below 0.971, and fallback sound. Live controls cover light/heavy fire, RCS, gear,
+weapon/fuel/wreck tails, distance filtering, engine thrust/damage response,
+stereo placement, 28-voice pressure, finite PCM bounded below 0.971, and fallback
+sound. Live controls cover light/heavy fire, RCS, gear,
 mute/resume, and volume. The hangar and rendering suites cover their existing
 flows. Numerical checks do not replace listening on the target headphones or
 speakers; tone and levels can be tuned from player feedback.

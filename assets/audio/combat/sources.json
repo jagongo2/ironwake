@@ -1,0 +1,73 @@
+{
+  "license": "CC0-1.0",
+  "licenseURL": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "sources": {
+    "rifle": {
+      "author": "michorvath",
+      "title": "AR15 rifle shot",
+      "page": "https://freesound.org/people/michorvath/sounds/427596/",
+      "preview": "https://cdn.freesound.org/previews/427/427596_3094998-hq.mp3",
+      "sha256": "000843aa0f9909d0edadeb48d4107e6ecb00842689f339e27c38399b7290d211"
+    },
+    "cannon": {
+      "author": "qubodup",
+      "title": "Cannon Shot",
+      "page": "https://freesound.org/people/qubodup/sounds/187767/",
+      "preview": "https://cdn.freesound.org/previews/187/187767_71257-hq.mp3",
+      "sha256": "4710f7fe566f3367f5630544daceb18a1216dd9c359ccb87fe940bd0c97ee858"
+    },
+    "explosion": {
+      "author": "sidohzen",
+      "title": "Explosion with debris - authentic. 4kg TNT",
+      "page": "https://freesound.org/people/sidohzen/sounds/165808/",
+      "preview": "https://cdn.freesound.org/previews/165/165808_2872744-hq.mp3",
+      "sha256": "295b980f938e6c1140b82fa60eb05c35f8551331d1b1fb58c9b9e87bed3908ac"
+    }
+  },
+  "edits": [
+    {
+      "file": "cannon-light.ogg",
+      "source": "rifle",
+      "start": 0.07,
+      "end": 0.78,
+      "pitch": 0.75,
+      "high": 70,
+      "low": 6500,
+      "bass": 3,
+      "fade": 0.24
+    },
+    {
+      "file": "cannon-heavy.ogg",
+      "source": "cannon",
+      "start": 0.15,
+      "end": 2.5,
+      "pitch": 0.85,
+      "high": 35,
+      "low": 5200,
+      "bass": 2,
+      "fade": 0.65
+    },
+    {
+      "file": "blast-impact.ogg",
+      "source": "explosion",
+      "start": 2.165,
+      "end": 3.12,
+      "pitch": 1.15,
+      "high": 70,
+      "low": 6200,
+      "bass": 0,
+      "fade": 0.28
+    },
+    {
+      "file": "blast-wreck.ogg",
+      "source": "explosion",
+      "start": 2.165,
+      "end": 6.165,
+      "pitch": 0.9,
+      "high": 30,
+      "low": 4500,
+      "bass": 2,
+      "fade": 1.15
+    }
+  ]
+}
