@@ -27,6 +27,7 @@ function waveforms(){
  make('shotHeavy',.82,(t,n,low,brown)=>n*Math.exp(-t*75)*.45+low*Math.exp(-t*8)*.7+brown*Math.exp(-t*5)+Math.sin(2*Math.PI*(88*t-22*t*t))*Math.exp(-t*10)*.5);
  make('blast',1.3,(t,n,low,brown)=>(low*.9+brown*.7+n*.1)*Math.exp(-t*4.7)*(1+.18*Math.sin(t*63))+n*Math.exp(-t*70)*.4);
  make('pressure',1.0,t=>(Math.sin(2*Math.PI*(66*t-17*t*t))+.4*Math.sin(2*Math.PI*113*t))*Math.exp(-t*8));
+ make('punch',.20,(t,n,low)=>(Math.sin(2*Math.PI*(94*t-38*t*t))*.72+Math.sin(t*2*Math.PI*151)*.18)*Math.exp(-t*24)+low*Math.exp(-t*58)*.24);
  make('tail',1.8,(t,n,low,brown)=>(low*.55+brown*.8)*Math.exp(-t*3)*(1-Math.exp(-t*24)));
  make('metal',.36,(t,n)=>n*Math.exp(-t*85)*.35+(Math.sin(t*2*Math.PI*283)+.5*Math.sin(t*2*Math.PI*719)+.24*Math.sin(t*2*Math.PI*1181))*Math.exp(-t*18)*.25);
  make('switch',.095,(t,n)=>n*Math.exp(-t*100)+Math.sin(t*2*Math.PI*370)*Math.exp(-t*75)*.3);
@@ -36,14 +37,14 @@ function waveforms(){
  const loop=(name,fn)=>{
   const a=new Float32Array(RATE*4);for(let i=0;i<a.length;i++)a[i]=fn(i/RATE);result[name]=a;
  };
- loop('engineLow',t=>(Math.sin(2*Math.PI*42*t)*.46+Math.sin(2*Math.PI*84*t)*.18+Math.sin(2*Math.PI*126*t)*.09)*(1+.11*Math.sin(2*Math.PI*7*t)));
- loop('engineRattle',t=>{const p=.5+.5*Math.sin(2*Math.PI*19*t+.18*Math.sin(2*Math.PI*3*t));return (Math.sin(2*Math.PI*157*t)*.17+Math.sin(2*Math.PI*241*t)*.1+Math.sin(2*Math.PI*397*t)*.04)*p*p;});
+ loop('engineLow',t=>{const drift=.12*Math.sin(2*Math.PI*.25*t);return (Math.sin(2*Math.PI*48*t)*.22+Math.sin(2*Math.PI*72*t+drift)*.4+Math.sin(2*Math.PI*96*t)*.16)*(1+.065*Math.sin(2*Math.PI*7*t));});
+ loop('engineRattle',t=>{const p=.5+.5*Math.sin(2*Math.PI*19*t+.18*Math.sin(2*Math.PI*3*t));return (Math.sin(2*Math.PI*119*t)*.11+Math.sin(2*Math.PI*181*t)*.06+Math.sin(2*Math.PI*277*t)*.025)*p*p;});
  // Crossfaded broadband beds avoid a click at the loop join.
  for(const name of ['engineAir','fireBed']){
   const a=new Float32Array(RATE*4);let low=0,brown=0;
   for(let i=0;i<a.length;i++){const n=rand()*2-1;low+=.13*(n-low);brown=brown*.997+n*.014;
    const pulse=1+.16*Math.sin(2*Math.PI*23*i/RATE)+.08*Math.sin(2*Math.PI*41*i/RATE);
-   a[i]=name==='engineAir'?(low*.9+(n-low)*.08+brown*.3)*pulse:low*.65+brown*.3+(rand()>.998?n*.4:0);
+   a[i]=name==='engineAir'?(low*.85+brown*.15)*pulse:low*.65+brown*.3+(rand()>.998?n*.25:0);
   }
   const fade=3200;for(let i=0;i<fade;i++){const k=i/(fade-1),j=a.length-fade+i;a[j]=a[j]*(1-k)+a[i]*k;}
   result[name]=a.slice(fade);
@@ -55,7 +56,7 @@ let pcm;
 export function createGameSound({context=null,loadSamples=true}={}){
  pcm||=waveforms();
  const rng=random(0xf17c09),buffers=new Map(),voices=[],loops=[],limits=new Map(),counts={};
- let ctx=context,output,bedBus,enabled=false,volume=.45,ready=Promise.resolve(),loaded=0,failed=0,muteTimer=0;
+ let ctx=context,output,bedBus,bedTone,combatBus,combatNodes=[],enabled=false,volume=.45,ready=Promise.resolve(),loaded=0,failed=0,muteTimer=0;
  let engineLoad=0,engineAirLevel=0,duckUntil=0,duckDepth=0;
  let lastUpdate=-1,lastMode='',engineLevel=0,loopGain=[],loopSource=[],disposed=false,lastEvent=null,serial=0;
  const listener={x:265,y:300,width:640};
@@ -67,15 +68,26 @@ export function createGameSound({context=null,loadSamples=true}={}){
   for(const [name,a] of Object.entries(pcm))buffers.set(name,createBuffer(a));
   const highpass=ctx.createBiquadFilter(),compressor=ctx.createDynamicsCompressor(),ceiling=ctx.createWaveShaper();
   highpass.type='highpass';highpass.frequency.value=27;highpass.Q.value=.5;
-  compressor.threshold.value=-12;compressor.knee.value=12;compressor.ratio.value=5;compressor.attack.value=.003;compressor.release.value=.2;
-  const curve=new Float32Array(2049);for(let i=0;i<curve.length;i++)curve[i]=.97*Math.tanh((i/1024-1)*1.25)/Math.tanh(1.25);
+  compressor.threshold.value=-10;compressor.knee.value=12;compressor.ratio.value=3;compressor.attack.value=.012;compressor.release.value=.25;
+  // Unity slope near zero: the old normalized curve also boosted quiet layers.
+  const curve=new Float32Array(2049);for(let i=0;i<curve.length;i++)curve[i]=.97*Math.tanh((i/1024-1)/.97);
   ceiling.curve=curve;ceiling.oversample='none';output=ctx.createGain();output.gain.value=0;
   // Only the continuous beds duck. A cannon must not turn down the next cannon.
-  bedBus=ctx.createGain();bedBus.connect(output);
+  bedBus=ctx.createGain();bedTone=ctx.createBiquadFilter();bedTone.type='lowpass';bedTone.frequency.value=950;bedTone.Q.value=.6;bedBus.connect(bedTone);bedTone.connect(output);
+  // One shared compensated saturation/EQ chain, not an effector per particle.
+  // Filtering AFTER saturation also removes its newly generated upper harmonics.
+  combatBus=ctx.createGain();combatBus.gain.value=.72;
+  const bass=ctx.createBiquadFilter(),presence=ctx.createBiquadFilter(),warm=ctx.createWaveShaper(),rolloff=ctx.createBiquadFilter();
+  bass.type='lowshelf';bass.frequency.value=95;bass.gain.value=2;
+  presence.type='peaking';presence.frequency.value=3500;presence.Q.value=.7;presence.gain.value=-9;
+  const tape=new Float32Array(2049);for(let i=0;i<tape.length;i++)tape[i]=Math.tanh((i/1024-1)*1.6)/1.6;
+  warm.curve=tape;warm.oversample='2x';rolloff.type='lowpass';rolloff.frequency.value=3800;rolloff.Q.value=.6;
+  combatNodes=[combatBus,bass,presence,warm,rolloff];for(let i=0;i<combatNodes.length-1;i++)combatNodes[i].connect(combatNodes[i+1]);rolloff.connect(output);
   output.connect(highpass);highpass.connect(compressor);compressor.connect(ceiling);ceiling.connect(ctx.destination);
   for(const name of ['engineLow','engineRattle','engineAir','fireBed']){
    const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=buffers.get(name);s.loop=true;g.gain.value=0;
-   s.connect(g);g.connect(bedBus);s.start();loops.push({s,g});loopSource.push(s);loopGain.push(g);
+   let filter;if(name==='engineAir'){filter=ctx.createBiquadFilter();filter.type='bandpass';filter.frequency.value=420;filter.Q.value=.6;s.connect(filter);filter.connect(g);}else s.connect(g);
+   g.connect(bedBus);s.start();loops.push({s,g,filter});loopSource.push(s);loopGain.push(g);
   }
   if(loadSamples)ready=Promise.all(SAMPLE_FILES.map(async name=>{
    try{
@@ -97,7 +109,26 @@ export function createGameSound({context=null,loadSamples=true}={}){
      buffers.set(name,loop);
      const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=loop;s.loop=true;g.gain.value=0;
      s.connect(g);g.connect(bedBus);s.start();loops.push({s,g});loopSource[4]=s;loopGain[4]=g;
-    }else buffers.set(name,b);
+    }else {
+     buffers.set(name,b);
+     if(name==='impactPlate_heavy_000.ogg'){
+      // A short, front-loaded recorded steel strike; pitching it down at play
+      // time gives weight without carrying the original plate's bright ringing.
+      let onset=0;while(onset<d.length-1&&Math.abs(d[onset])<.065)onset++;
+      onset=Math.max(0,onset-Math.round(source.sampleRate*.001));
+      const a=new Float32Array(Math.min(d.length-onset,Math.round(source.sampleRate*.15)));let p=0;
+      for(let i=0;i<a.length;i++){a[i]=d[onset+i]*Math.exp(-i/(source.sampleRate*.043))*Math.min(1,i/(source.sampleRate*.0015),(a.length-1-i)/48);p=Math.max(p,Math.abs(a[i]));}
+      if(p>0){
+       for(let i=0;i<a.length;i++)a[i]*=.65/p;
+       const punch=ctx.createBuffer(1,a.length,source.sampleRate);punch.copyToChannel(a,0);buffers.set('steelPunch',punch);
+       // Armor gets only a 20% low-rate/11-bit layer, prepared once. The event
+       // low-pass removes bright aliasing; cannon punches keep the clean strike.
+       const armor=ctx.createBuffer(1,a.length,source.sampleRate),crushed=armor.getChannelData(0),step=Math.max(1,Math.round(source.sampleRate/11025));
+       for(let i=0;i<a.length;i++)crushed[i]=a[i]*.8+Math.round(a[i-i%step]*1024)/1024*.2;
+       buffers.set('armorStrike',armor);
+      }
+     }
+    }
     loaded++;
    }catch{failed++;} // Procedural material layers remain usable offline/unsupported.
   }));
@@ -111,22 +142,23 @@ export function createGameSound({context=null,loadSamples=true}={}){
   const metal=sample(choose('impactMetal_heavy','metal'),'metal'),plate=sample(choose('impactPlate_heavy','metal'),'metal');
   const light=sample(choose('impactMetal_light','metal'),'metal'),sw=sample(options.on===false?'switch_004.ogg':'switch_003.ogg','switch');
   const scrape=sample('scratch_004.ogg','air');
+  const punch=sample('steelPunch','punch');
   switch(name){
-   case 'lightShot':return [[sample('cannon-light.ogg','shotLight'),.72,1],['pressure',.12,1.5],[metal,.16,1.3,.035],['air',.06,1.1,.065]];
-   case 'heavyShot':return [[sample('cannon-heavy.ogg','shotHeavy'),.82,1],['pressure',.26,.82],[plate,.19,.7,.065],['tail',.09,.85,.09]];
+   case 'lightShot':return [[punch,.24,.78],[sample('cannon-light.ogg','shotLight'),.42,.94,.012],['pressure',.1,1.1],['air',.018,.7,.045]];
+   case 'heavyShot':return [[punch,.60,.52],[sample('cannon-heavy.ogg','shotHeavy'),.44,.91,.028],['pressure',.28,.82],['tail',.10,.68,.075]];
    case 'explosion':{
     // An impact snaps, fuel vents, and a wreck leaves a longer debris trail.
     // These are audio descriptions of existing events, not extra detonations.
     const wreck=options.kind==='wreck',fuel=options.kind==='fuel',large=wreck||fuel||size>1;
     const body=sample(large?'blast-wreck.ogg':'blast-impact.ogg','blast');
-    const rate=wreck?clamp(.97-size*.07,.79,.95):fuel?1.12:large?clamp(1.13-size*.10,.88,1.1):clamp(1.28-size*.28,1,1.25);
-    return [[body,(large?.62:.48)*force,rate],['pressure',(fuel?.28:.2)*force,large?.78:1.15],
-     [wreck?plate:metal,(wreck?.23:.12)*Math.sqrt(size),wreck?.65:.9,large?.16:.055],
-     [fuel?'air':'tail',(fuel?.24:.07)*force,fuel?.46:1,large?.09:.035]];
+    const rate=wreck?clamp(.97-size*.07,.79,.95):fuel?1.02:large?clamp(1.13-size*.10,.88,1.1):clamp(1.12-size*.18,.94,1.1);
+    return [[body,(large?.38:.30)*force,rate],['pressure',(fuel?.24:.2)*force,large?.74:.95],
+     [wreck?punch:metal,(wreck?.28:.07)*Math.sqrt(size),wreck?.55:.62,large?.12:.045],
+     [fuel?'air':'tail',(fuel?.09:.08)*force,fuel?.43:.78,large?.09:.035]];
    }
-   case 'metal':return [[metal,.25+.15*size,.9],[plate,.12,.8,.015],['metal',.09,1.25,.018]];
-   case 'hit':return [[light,.37,.95],[plate,.11,.9,.01]];
-   case 'rcs':return [['air',.16,1.1]];
+   case 'metal':return [[punch,.24+.13*size,.66],[plate,.065,.58,.015],['metal',.04,.75,.018]];
+   case 'hit':return [[sample('armorStrike','punch'),.22,.8],[light,.1,.66,.008]];
+   case 'rcs':return [['air',.08,.75]];
    case 'gear':return [['servo',.16,.8],[sw,.24,.9],[scrape,.06,.75,.035],[plate,.08,.9,.15]];
    case 'gearLatch':return [[sw,.17,1],[light,.11,1.05,.005]];
    case 'motor':return [['servo',.3,.7],[plate,.1,.65],[scrape,.08,.65,.04],['tail',.08,1.2]];
@@ -160,8 +192,10 @@ export function createGameSound({context=null,loadSamples=true}={}){
   const gain=ctx.createGain(),panner=ctx.createStereoPanner?ctx.createStereoPanner():ctx.createGain();
   // One inexpensive filter per event softens distant reports without a reverb
   // processor, propagation delay or an unbounded graph of effect nodes.
-  const tone=ctx.createBiquadFilter();tone.type='lowpass';tone.frequency.value=ui?18000:1800+11500*attenuation;tone.Q.value=.5;
-  if(panner.pan)panner.pan.value=pan;gain.gain.value=attenuation*(options.gain??1)*(.8+.2*Math.sqrt(size));gain.connect(tone);tone.connect(panner);panner.connect(output);
+  const tone=ctx.createBiquadFilter();tone.type='lowpass';
+  const near=name==='heavyShot'?2700:name==='lightShot'?2500:name==='explosion'?3400:name==='rcs'?1200:2400;
+  tone.frequency.value=ui?18000:500+(near-500)*attenuation;tone.Q.value=.55;
+  if(panner.pan)panner.pan.value=pan;gain.gain.value=attenuation*(options.gain??1)*(.8+.2*Math.sqrt(size));gain.connect(tone);tone.connect(panner);panner.connect(ui?output:combatBus);
   const v={id:++serial,priority,gain,pan:panner,tone,sources:[],done:false};voices.push(v);
   const t=Math.max(now,options.when??now),variation=.97+rng()*.06;let pending=0;
   for(const [buffer,level,rate=1,delay=0] of layers(name,size,options)){
@@ -186,14 +220,14 @@ export function createGameSound({context=null,loadSamples=true}={}){
   const strength=frame.dead?0:clamp(frame.integrity??1,0,1),throttle=clamp(frame.throttle??1,0,2);
   // Rotor speed changes slowly; exhaust follows thrust more promptly. Damage
   // reduces total output while leaving a relatively rougher mechanical bed.
-  engineLoad=throttle;engineLevel=flying?.13*strength*(.3+.7*Math.sqrt(throttle)):hangar?.012:.003;
-  engineAirLevel=flying?.105*strength*Math.pow(throttle,1.35):0;
-  target(loopGain[0].gain,engineLevel*.72,t,.2);target(loopGain[1].gain,engineLevel*(loopGain[4]?.2:.5)*(1+(1-strength)*.7),t,.14);
+  engineLoad=throttle;engineLevel=flying?.085*strength*(.3+.7*Math.sqrt(throttle)):hangar?.008:.002;
+  engineAirLevel=flying?.028*strength*Math.pow(throttle,1.35):0;
+  target(loopGain[0].gain,engineLevel,t,.2);target(loopGain[1].gain,engineLevel*(loopGain[4]?.13:.4)*(1+(1-strength)*.5),t,.14);
   target(loopGain[2].gain,engineAirLevel,t,.09);
   target(loopGain[3].gain,flying?clamp(frame.fire||0,0,1)*.035:0,t,.18);
-  target(loopSource[0].playbackRate,.76+throttle*.16,t,.24);target(loopSource[1].playbackRate,.72+throttle*.2,t,.2);
-  target(loopSource[2].playbackRate,.78+throttle*.16,t,.16);
-  if(loopGain[4]){target(loopGain[4].gain,engineLevel,t,.2);target(loopSource[4].playbackRate,.78+throttle*.16,t,.28);}
+  target(loopSource[0].playbackRate,.84+throttle*.1,t,.24);target(loopSource[1].playbackRate,.70+throttle*.13,t,.2);
+  target(loopSource[2].playbackRate,.72+throttle*.12,t,.16);
+  if(loopGain[4]){target(loopGain[4].gain,engineLevel*.85,t,.2);target(loopSource[4].playbackRate,.72+throttle*.12,t,.28);}
  }
  function setEnabled(on,value=volume){
   initialize();enabled=!!on;volume=clamp(Number(value)||0,0,1);
@@ -214,11 +248,11 @@ export function createGameSound({context=null,loadSamples=true}={}){
   else if(enabled){lastUpdate=-1;ctx.resume().catch(()=>{});}
  };
  globalThis.document?.addEventListener('visibilitychange',visibility);
- function destroy(){disposed=true;clearTimeout(muteTimer);globalThis.document?.removeEventListener('click',uiClick);globalThis.document?.removeEventListener('visibilitychange',visibility);for(const v of [...voices]){stop(v);release(v);}for(const {s,g} of loops){try{s.stop();}catch{}s.disconnect();g.disconnect();}bedBus?.disconnect();if(ctx&&ctx.close)ctx.close().catch(()=>{});}
+ function destroy(){disposed=true;clearTimeout(muteTimer);globalThis.document?.removeEventListener('click',uiClick);globalThis.document?.removeEventListener('visibilitychange',visibility);for(const v of [...voices]){stop(v);release(v);}for(const {s,g,filter} of loops){try{s.stop();}catch{}s.disconnect();g.disconnect();filter?.disconnect();}bedBus?.disconnect();bedTone?.disconnect();for(const node of combatNodes)node.disconnect();if(ctx&&ctx.close)ctx.close().catch(()=>{});}
  return {
   unlock(){initialize();if(ctx?.state==='suspended'&&ctx.resume)ctx.resume().catch(()=>{});return ctx;},
   setEnabled,play,update,destroy,
   get context(){return ctx;},get ready(){return ready;},
-  diagnostics(){return {revision:'combat-2',enabled,volume,state:ctx?.state||'unavailable',loadedSamples:loaded,failedSamples:failed,sampledEngine:!!loopSource[4],sampledCombat:COMBAT_FILES.every(name=>buffers.has(name)),voices:voices.length,maxVoices:MAX_VOICES,engineLevel,engineLoad,engineAirLevel,events:{...counts},lastEvent};}
+  diagnostics(){return {revision:'combat-3-low',enabled,volume,state:ctx?.state||'unavailable',loadedSamples:loaded,failedSamples:failed,sampledEngine:!!loopSource[4],sampledCombat:COMBAT_FILES.every(name=>buffers.has(name)),voices:voices.length,maxVoices:MAX_VOICES,engineLevel,engineLoad,engineAirLevel,events:{...counts},lastEvent};}
  };
 }

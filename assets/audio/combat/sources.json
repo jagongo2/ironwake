@@ -24,50 +24,61 @@
       "sha256": "295b980f938e6c1140b82fa60eb05c35f8551331d1b1fb58c9b9e87bed3908ac"
     }
   },
+  "processing": {
+    "bassHz": 90,
+    "bassQ": 0.8,
+    "presenceHz": 3500,
+    "presenceQ": 0.7,
+    "presenceDb": -9,
+    "mono": true,
+    "sampleRate": 32000,
+    "codec": "libvorbis",
+    "quality": 4
+  },
   "edits": [
     {
       "file": "cannon-light.ogg",
       "source": "rifle",
       "start": 0.07,
-      "end": 0.78,
-      "pitch": 0.75,
-      "high": 70,
-      "low": 6500,
-      "bass": 3,
-      "fade": 0.24
+      "end": 0.43,
+      "pitch": 0.62,
+      "high": 45,
+      "low": 2200,
+      "bass": 2,
+      "fade": 0.22
     },
     {
       "file": "cannon-heavy.ogg",
       "source": "cannon",
       "start": 0.15,
       "end": 2.5,
-      "pitch": 0.85,
-      "high": 35,
-      "low": 5200,
-      "bass": 2,
-      "fade": 0.65
+      "pitch": 0.7,
+      "high": 30,
+      "low": 3000,
+      "bass": 3,
+      "fade": 0.95
     },
     {
       "file": "blast-impact.ogg",
       "source": "explosion",
       "start": 2.165,
       "end": 3.12,
-      "pitch": 1.15,
-      "high": 70,
-      "low": 6200,
-      "bass": 0,
-      "fade": 0.28
+      "pitch": 0.9,
+      "high": 40,
+      "low": 3200,
+      "bass": 1.5,
+      "fade": 0.38
     },
     {
       "file": "blast-wreck.ogg",
       "source": "explosion",
       "start": 2.165,
       "end": 6.165,
-      "pitch": 0.9,
-      "high": 30,
-      "low": 4500,
+      "pitch": 0.78,
+      "high": 28,
+      "low": 3000,
       "bass": 2,
-      "fade": 1.15
+      "fade": 1.5
     }
   ]
 }

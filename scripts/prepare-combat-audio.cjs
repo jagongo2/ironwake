@@ -12,10 +12,10 @@ const sources={
 // Windows are deliberately bounded to one report: the cannon file has two shots,
 // and the demolition recording has people/background noise before the explosion.
 const edits=[
- {file:'cannon-light.ogg',source:'rifle',start:.070,end:.780,pitch:.75,high:70,low:6500,bass:3,fade:.24},
- {file:'cannon-heavy.ogg',source:'cannon',start:.150,end:2.500,pitch:.85,high:35,low:5200,bass:2,fade:.65},
- {file:'blast-impact.ogg',source:'explosion',start:2.165,end:3.120,pitch:1.15,high:70,low:6200,bass:0,fade:.28},
- {file:'blast-wreck.ogg',source:'explosion',start:2.165,end:6.165,pitch:.90,high:30,low:4500,bass:2,fade:1.15}
+ {file:'cannon-light.ogg',source:'rifle',start:.070,end:.430,pitch:.62,high:45,low:2200,bass:2,fade:.22},
+ {file:'cannon-heavy.ogg',source:'cannon',start:.150,end:2.500,pitch:.70,high:30,low:3000,bass:3,fade:.95},
+ {file:'blast-impact.ogg',source:'explosion',start:2.165,end:3.120,pitch:.90,high:40,low:3200,bass:1.5,fade:.38},
+ {file:'blast-wreck.ogg',source:'explosion',start:2.165,end:6.165,pitch:.78,high:28,low:3000,bass:2,fade:1.5}
 ];
 (async()=>{
  fs.mkdirSync(cache,{recursive:true});fs.mkdirSync(out,{recursive:true});
@@ -30,9 +30,10 @@ const edits=[
  }
  for(const e of edits){
   const duration=(e.end-e.start)/e.pitch;
-  const filter=`atrim=start=${e.start}:end=${e.end},asetpts=PTS-STARTPTS,aresample=32000,asetrate=${32000*e.pitch},aresample=32000,highpass=f=${e.high},lowpass=f=${e.low},equalizer=f=130:t=q:w=0.8:g=${e.bass},afade=t=in:d=0.001,afade=t=out:st=${duration-e.fade}:d=${e.fade}`;
+  const filter=`atrim=start=${e.start}:end=${e.end},asetpts=PTS-STARTPTS,aresample=32000,asetrate=${32000*e.pitch},aresample=32000,highpass=f=${e.high},lowpass=f=${e.low},equalizer=f=90:t=q:w=0.8:g=${e.bass},equalizer=f=3500:t=q:w=0.7:g=-9,afade=t=in:d=0.001,afade=t=out:st=${duration-e.fade}:d=${e.fade}`;
   execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-i',path.join(cache,e.source+'.mp3'),'-af',filter,'-ac','1','-ar','32000','-c:a','libvorbis','-q:a','4',path.join(out,e.file)]);
   console.log(e.file,fs.statSync(path.join(out,e.file)).size+' bytes');
  }
- fs.writeFileSync(path.join(out,'sources.json'),JSON.stringify({license:'CC0-1.0',licenseURL:'https://creativecommons.org/publicdomain/zero/1.0/',sources,edits},null,2)+'\n');
+ fs.writeFileSync(path.join(out,'sources.json'),JSON.stringify({license:'CC0-1.0',licenseURL:'https://creativecommons.org/publicdomain/zero/1.0/',sources,
+  processing:{bassHz:90,bassQ:.8,presenceHz:3500,presenceQ:.7,presenceDb:-9,mono:true,sampleRate:32000,codec:'libvorbis',quality:4},edits},null,2)+'\n');
 })().catch(e=>{console.error(e);process.exitCode=1;});
