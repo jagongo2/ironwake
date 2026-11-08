@@ -12,6 +12,7 @@ const options={shake:!matchMedia('(prefers-reduced-motion: reduce)').matches,fla
 const pointer={x:490,y:150,down:false,inside:false};
 let state='briefing',practice=false,ships=[],player,bullets=[],particles=[],chunks=[],blasts=[],pending=[],flames=[],cam={x:0,y:0},time=0,kills=0,shots=0,hits=0,shake=0,flash=0,slow=0,endTimer=0,result=null,msgTimer=0,hudTimer=0,last=0,acc=0,frames=0;
 const MAX_PARTICLES=3200,MAX_FLAMES=14;
+let rcsCameraOffset=0;
 const stats={maxParticles:0,maxChunks:0,maxFlames:0,frames:0};
 // All audio is synthesized locally; a user gesture starts the AudioContext.
 let audio=null,master=null,engine=null,engineGain=null,soundOn=false,noiseBuffer=null;
@@ -164,6 +165,14 @@ function emitEngine(s,e,dt){
  // Exhaust kicks ground dust sideways rather than stopping at a flat clip line.
  e.dust=(e.dust||0)-dt;const gap=FLOOR-p.y;
  if(gap<65&&gap>0&&e.dust<=0){e.dust=rand(.13,.3);billowSmoke.emit(p.x+rand(-6,6),FLOOR-3,rand(-28,28),rand(-9,-3),rand(2,4),rand(1,2),.28)}
+}
+function rcsHiss(){if(!audio||!soundOn)return;const t=audio.currentTime,n=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();n.buffer=noiseBuffer;f.type='highpass';f.frequency.value=1300;g.gain.setValueAtTime(.04,t);g.gain.exponentialRampToValueAtTime(.001,t+.085);n.connect(f);f.connect(g);g.connect(master);n.start(t);n.stop(t+.09);}
+function emitRCS(s,dt){const r=s.rcs;if(!r)return;if(r.kicked)rcsHiss();const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025){r.emit=0;return;}
+ r.emit+=dt*(18+28*power);const direction=r.jetDirection||Math.sign(r.torque)||r.command||1,cs=Math.cos(s.angle),sn=Math.sin(s.angle);
+ while(r.emit>=1){r.emit--;for(let side=0;side<2;side++){const exhaust=side?-direction:direction;if(!window.__ironwakeRCS?.nozzleAlive(s,side,exhaust))continue;const p=s.world(side?s.w-11:10,exhaust>0?34:16),speed=70+power*55;addParticle(p.x,p.y,s.vx-sn*exhaust*speed+rand(-6,6),s.vy+cs*exhaust*speed+rand(-6,6),rand(.07,.13),1,'rcs',7);}}
+}
+function drawRCS(s){const r=s.rcs;if(!r||s.dead)return;const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025)return;const direction=r.jetDirection||Math.sign(r.torque)||r.command||1,length=3+power*10+(Math.sin(r.clock*91)+1)*.7;
+ for(let side=0;side<2;side++){const exhaust=side?-direction:direction;if(!window.__ironwakeRCS?.nozzleAlive(s,side,exhaust))continue;const x=(side?s.w-11:10)-s.w/2,y=(exhaust>0?34:16)-s.h/2;rect(x-2,y-1,4,2,17);rect(x-1,y,2,exhaust>0?3:1,'#efffff');for(let j=0;j<length;j+=2){const width=j<3?3:j<7?2:1;rect(x-width/2,y+exhaust*(j+2),width,2,j<3?'#eefbff':j<7?'#aad9e3':'#668f9b');}}
 }
 function updateJetGas(dt){for(let i=jetGas.length-1;i>=0;i--){const p=jetGas[i];p.life-=dt;if(p.life<=0){jetGas[i]=jetGas[jetGas.length-1];jetGas.pop();continue}
  const age=p.max-p.life,n=fireNoise[(p.seed+(age*90|0)*17)&2047]-.5;
@@ -502,21 +511,46 @@ function damage(s,wx,wy,radius,power=3){if(s.dead&&s.count<10)return;const gearH
  if(removed){detach(s);s.recount();syncGearAttachments(s);s.dirty=true;if(!s.dead&&(s.count<s.initial*.27||s.coreCount<s.initialCore*.2))killShip(s)}processHazards(s);s.flash=.07;return removed+gearHits;}
 function killShip(s){if(s.dead)return;s.dead=true;s.deathTime=0;explosion(s.x,s.y,2);for(let i=0;i<4;i++)pending.push({ship:s,x:rand(8,s.w-8),y:rand(16,35),t:.15+i*.17,radius:rand(9,16),wreckCascade:true});for(let i=0;i<2;i++){const x=s.w*(.3+i*.4),y=23,q=s.world(x,y);ignite(q.x,q.y,1.3,rand(5,8),s,x,y,'fuel')}if(s.team){kills++;notice('적 함선 격침 · '+kills+' / 3',4);slow=.1;if(kills===3&&!practice){result='victory';endTimer=2.2}}else{result='defeat';endTimer=2;notice('기함 손실 · 비상 탈출',5)}}
 function fire(s,heavy=false){if(s.dead||s.cool>0||(!heavy&&s.overheated)||(heavy&&s.heavy>0))return false;let a=s.aim;const muzzle=s.world(s.w/2,14);let x=muzzle.x+Math.cos(a)*17,y=muzzle.y+Math.sin(a)*17;const speed=heavy?280:s.team?215:370;bullets.push({x,y,px:x,py:y,vx:Math.cos(a)*speed+s.vx*.35,vy:Math.sin(a)*speed+s.vy*.35,team:s.team,owner:s,heavy,life:4});s.cool=heavy?.38:s.team?.95:.18;if(heavy)s.heavy=5.5;else s.heat=Math.min(1,s.heat+.105);if(s.heat>=1){s.overheated=true;if(!s.team)notice('포신 과열 · 냉각 중',2)}s.vx-=Math.cos(a)*(heavy?14:2.2);s.vy-=Math.sin(a)*(heavy?10:1.2);for(let i=0;i<7;i++)addParticle(x,y,Math.cos(a)*rand(30,80)+rand(-10,10),Math.sin(a)*rand(30,80)+rand(-10,10),rand(.04,.12),heavy?5:3,'fire',13);boom(heavy?.8:.27);if(!s.team){shots++;shake=Math.min(4,shake+(heavy?2:.45))}return true;}
-function reset(isPractice=false){collisionStats.contacts=collisionStats.crushed=collisionStats.detonations=0;practice=isPractice;ships=[new Ship(265,300,0),new Ship(640,280,1),new Ship(1020,220,1,1),new Ship(1440,350,1,2)];player=ships[0];bullets=[];particles=[];chunks=[];blasts=[];pending=[];flames=[];jetGas.length=0;billowSmoke.reset();fireFluid.reset();time=0;kills=0;shots=0;hits=0;shake=0;flash=0;slow=0;endTimer=0;result=null;keys.clear();pointer.down=false;cam={x:clamp(player.x-W*.38,0,Math.max(0,WORLD-W)),y:clamp(player.y-H*.47,0,Math.max(0,FLOOR-H+45))};document.documentElement.classList.toggle('in-briefing',false);state='playing';$('overlay').classList.add('hidden');$('settings').hidden=true;$('pauseMenu').hidden=true;$('pause').textContent='계속하기';$('resultStats').hidden=true;notice(isPractice?'사격 시험 · 적 무장 정지':'적 호위함 3척 · 교전 허가',4);C.focus();setSound(audio?soundOn:true);updateHUD();}
+function hangarSound(kind){
+ if(!audio||!soundOn)return;
+ const now=audio.currentTime,motor=kind==='motor',impact=kind==='impact',latch=kind==='lever',home=kind==='lever-home',detent=kind==='detent',duration=motor?.7:impact?.34:latch?.32:home?.18:detent?.09:.11;
+ const noise=audio.createBufferSource();noise.buffer=noiseBuffer;
+ const filter=audio.createBiquadFilter();filter.type=detent?'bandpass':'lowpass';filter.Q.value=detent?.85:.7;filter.frequency.setValueAtTime(motor?430:impact?1100:latch?1350:home?650:detent?720:2100,now);
+ filter.frequency.exponentialRampToValueAtTime(motor?90:120,now+duration);
+ const gain=audio.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(motor?.11:impact?.45:latch?.25:home?.08:detent?.05:.12,now+(latch||home?.003:.012));gain.gain.exponentialRampToValueAtTime(.001,now+duration);
+ noise.connect(filter);filter.connect(gain);gain.connect(master);noise.start(now);noise.stop(now+duration);
+ if(impact||latch||home){const oscillator=audio.createOscillator(),bass=audio.createGain(),tail=impact?.3:latch?.38:.18;oscillator.frequency.setValueAtTime(impact?65:latch?58:85,now);oscillator.frequency.exponentialRampToValueAtTime(impact?25:latch?28:42,now+tail*.75);bass.gain.setValueAtTime(impact?.45:latch?.20:.065,now);bass.gain.exponentialRampToValueAtTime(.001,now+tail);oscillator.connect(bass);bass.connect(master);oscillator.start(now);oscillator.stop(now+tail+.01);}
+ if(latch)for(const [frequency,volume,tail] of [[148,.036,.55],[281,.019,.38],[437,.008,.23]]){const ring=audio.createOscillator(),gain=audio.createGain();ring.type='sine';ring.frequency.value=frequency;gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.0001,now+tail);ring.connect(gain);gain.connect(master);ring.start(now);ring.stop(now+tail+.01);}
+}
+function beginOperation(){
+ if(state!=='briefing'&&state!=='result')return;
+ if(!window.__ironwakePreflight){reset(false);return;}
+ const previous=state;setSound(audio?soundOn:true);state='preflight';keys.clear();pointer.down=false;
+ window.__ironwakePreflight.open({ship:player.skin.toDataURL(),motion:options.shake,sound:hangarSound,launch:()=>reset(false),cancel:()=>{state=previous;}});
+}
+function reset(isPractice=false){rcsCameraOffset=0;collisionStats.contacts=collisionStats.crushed=collisionStats.detonations=0;practice=isPractice;ships=[new Ship(265,300,0),new Ship(640,280,1),new Ship(1020,220,1,1),new Ship(1440,350,1,2)];player=ships[0];bullets=[];particles=[];chunks=[];blasts=[];pending=[];flames=[];jetGas.length=0;billowSmoke.reset();fireFluid.reset();time=0;kills=0;shots=0;hits=0;shake=0;flash=0;slow=0;endTimer=0;result=null;keys.clear();pointer.down=false;cam={x:clamp(player.x-W*.38,0,Math.max(0,WORLD-W)),y:clamp(player.y-H*.47,0,Math.max(0,FLOOR-H+45))};document.documentElement.classList.toggle('in-briefing',false);state='playing';$('overlay').classList.add('hidden');$('settings').hidden=true;$('pauseMenu').hidden=true;$('pause').textContent='계속하기';$('resultStats').hidden=true;notice(isPractice?'사격 시험 · 적 무장 정지':'적 호위함 3척 · 교전 허가',4);C.focus();setSound(audio?soundOn:true);updateHUD();}
 function showResult(){state='result';$('overlay').classList.remove('hidden');$('eyebrow').textContent=result==='victory'?'SECTOR 07 / ALL CLEAR':'SECTOR 07 / SIGNAL LOST';$('title').innerHTML=result==='victory'?'항로<br>확보':'기함<br>손실';$('title').setAttribute('aria-label',result==='victory'?'항로 확보':'기함 손실');$('subtitle').textContent=result==='victory'?'봉쇄 해제':'교신 두절';$('description').textContent=result==='victory'?'적 호위함 세 척이 무력화되었습니다.':'기관과 함교를 보호하십시오. 고도를 바꾸면 적 포화를 피할 수 있습니다.';$('mission').textContent='K-17 / 작전 01 — 잿빛 회랑';$('resultStats').hidden=false;$('resultStats').textContent=`격침 ${kills}/3 · 교전 ${Math.floor(time)}초 · 명중률 ${shots?Math.round(hits/shots*100):0}%`;$('start').innerHTML='재출격';$('start').setAttribute('aria-label','재출격');$('practice').textContent='사격 시험장 진입';}
 function pause(){if(state==='playing'){state='paused';pointer.down=false;keys.clear();$('pauseMenu').hidden=false;$('pause').textContent='계속하기'}else if(state==='paused'){state='playing';$('pauseMenu').hidden=true;C.focus()}}
 function updateShip(s,dt){s.collisionFx=Math.max(0,s.collisionFx-dt);for(const h of s.hazards)h.shock*=Math.exp(-dt*1.8);syncGearAttachments(s);if(!s.dead)updateGear(s,dt);s.cool=Math.max(0,s.cool-dt);s.heavy=Math.max(0,s.heavy-dt);s.heat=Math.max(0,s.heat-dt*.23);if(s.overheated&&s.heat<.3)s.overheated=false;s.flash=Math.max(0,s.flash-dt);
- if(s.dead){s.vy+=G*dt;s.deathTime+=dt;s.vx*=Math.exp(-.08*dt);}
+ if(s.dead){s.vy+=G*dt;s.deathTime+=dt;s.vx*=Math.exp(-.08*dt);if(s.rcs){s.rcs.torque=s.rcs.effort=s.rcs.flare=s.rcs.acceleration=0;s.rcs.command=0;}}
  else{let ix=0,iy=0,boost=false;if(s===player){ix=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0);iy=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0);boost=keys.has('ShiftLeft')||keys.has('ShiftRight');let p=s.world(s.w/2,14);s.aim=Math.atan2(pointer.y+cam.y-p.y,pointer.x+cam.x-p.x);if(pointer.down)fire(s);if(keys.has('Space'))fire(s,true)}else{const dx=player.x-s.x,dy=player.y-s.y;if(Math.abs(dx)<850&&!player.dead){ix=clamp((dx-Math.sign(dx)*250)/120,-.75,.75);iy=clamp((dy+Math.sin(time*.7+s.phase)*85)/110,-.75,.75);const lead=Math.hypot(dx,dy)/215;s.aim=Math.atan2(dy+player.vy*lead*.65-8,dx+player.vx*lead*.65)+Math.sin(time*2+s.phase)*.035;s.aiTimer-=dt;if(s.aiTimer<=0&&Math.abs(dx)<570&&!practice){fire(s);s.aiTimer=rand(1.25,2.2)}}}
   const response=1-Math.exp(-dt/ .24);s.tx=lerp(s.tx,ix,response);s.ty=lerp(s.ty,iy,response);const thrust=s.engineRatio;const mass=clamp(s.count/s.initial,.55,1);if(iy<0)s.resting=false;const liftTarget=s.resting?0:1;s.liftPower=lerp(s.liftPower,liftTarget,1-Math.exp(-dt*8));s.throttle=clamp((1-s.ty*.7+(boost?.5:0))*(.15+s.liftPower*.85),.08,2);s.vx+=(s.tx*(boost?103:65)*thrust/mass-s.vx*.37)*dt;s.vy+=(G*(1-thrust*s.liftPower)+s.ty*(boost?100:65)*thrust/mass-s.vy*.6)*dt;
   // Airborne attitude control supplies torque; a supported hull can tip freely.
-  if(!s.resting){const target=clamp(s.tx*.13+s.vx*.0006,-.2,.2);s.av+=((target-s.angle)*12-s.av*5)*thrust*dt}else s.av*=Math.exp(-dt*.06);
+  if(!s.resting){
+   const command=s===player?Number(keys.has('KeyE'))-Number(keys.has('KeyQ')):0;
+   const controlled=s===player&&window.__ironwakeRCS?.step(s,command,dt);
+   if(controlled){
+    // A balanced RCS pair turns the hull; canted main lift supplies real drift.
+    const lift=G*thrust*s.liftPower-s.ty*(boost?100:65)*thrust/mass;
+    s.vx+=Math.sin(s.angle)*lift*dt;s.vy+=(1-Math.cos(s.angle))*lift*dt;
+   }else{const target=clamp(s.tx*.13+s.vx*.0006,-.2,.2);s.av+=((target-s.angle)*12-s.av*5)*thrust*dt;}
+  }else{if(s===player)window.__ironwakeRCS?.step(s,0,dt);s.av*=Math.exp(-dt*.06);}
  }
  rotateBody(s,s.av*dt);s.x+=s.vx*dt;s.y+=s.vy*dt;solveGround(s,dt);if(s.grounded)s.resting=true;
  if(s.y<45){s.y=45;s.vy=Math.max(0,s.vy)}
 
  if(s.x<60||s.x>WORLD-60){s.x=clamp(s.x,60,WORLD-60);s.vx*=-.2}
- if(!s.dead)for(const e of s.engines)if(e.alive)emitEngine(s,e,dt);
+ if(!s.dead)for(const e of s.engines)if(e.alive)emitEngine(s,e,dt);if(!s.dead&&s===player)emitRCS(s,dt);
  s.smokeAcc-=dt;if(s.count/s.initial<.75&&s.smokeAcc<=0){s.smokeAcc=rand(.08,.2);const p=s.world(s.w*(.38+Math.random()*.24),18);billowSmoke.emit(p.x,p.y,s.vx*.32+rand(-5,5),s.vy*.12-rand(12,26),rand(3.5,6),rand(4,6),s.dead?1.2:.85)}
 
 }
@@ -531,7 +565,9 @@ function update(dt){time+=dt;
  updateParticles(dt);
  for(let i=chunks.length-1;i>=0;i--){let p=chunks[i];p.life-=dt;p.vy+=G*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.a+=p.av*dt;const bottom=Math.abs(Math.sin(p.a))*p.w/2+Math.abs(Math.cos(p.a))*p.h/2;if(p.y>FLOOR-bottom){if(p.vy>50){for(let j=0;j<5;j++)addParticle(p.x,FLOOR-1,rand(-25,25),rand(-25,-5),.6,2,'spark',11)}p.y=FLOOR-bottom;p.vy=Math.abs(p.vy)<7?0:-p.vy*.12;p.vx*=Math.exp(-dt*7);p.av*=Math.exp(-dt*9)}if(p.life<=0)chunks.splice(i,1)}
  for(let i=blasts.length-1;i>=0;i--){blasts[i].age+=dt;if(blasts[i].age>.5)blasts.splice(i,1)}
+ if(rcsCameraOffset){cam.x-=rcsCameraOffset;rcsCameraOffset=0;}
  shake*=Math.exp(-dt*8);flash*=Math.exp(-dt*12);slow=Math.max(0,slow-dt);cam.x=lerp(cam.x,clamp(player.x-W*.38+player.vx*.3,0,Math.max(0,WORLD-W)),1-Math.exp(-dt*3));cam.y=lerp(cam.y,clamp(player.y-H*.47+player.vy*.2,0,Math.max(0,FLOOR-H+45)),1-Math.exp(-dt*3));
+ if(player.rcs&&window.__ironwakeRCS){const offset=window.__ironwakeRCS.sway(player.rcs,dt,options.shake),base=cam.x;cam.x=clamp(base+offset,0,Math.max(0,WORLD-W));rcsCameraOffset=cam.x-base;}
  if(result){endTimer-=dt;if(endTimer<=0)showResult()}if(practice&&kills===3&&!result){result='victory';endTimer=2}msgTimer-=dt;if(msgTimer<=0)notice(practice?'사격 시험 · 적 무장 정지':player.engineRatio<.75?'기관 손상 · 추력 저하':'',4);hudTimer-=dt;if(hudTimer<=0){updateHUD();hudTimer=.1}if(engine&&audio){engine.frequency.setTargetAtTime(29+player.throttle*12+Math.abs(player.vx)*.05,audio.currentTime,.1);engineGain.gain.setTargetAtTime(player.dead?.002:.018+player.throttle*.012,audio.currentTime,.1)}stats.maxParticles=Math.max(stats.maxParticles,particles.length);stats.maxChunks=Math.max(stats.maxChunks,chunks.length);stats.maxFlames=Math.max(stats.maxFlames,flames.length);
 }
 function updateParticles(dt){updateJetGas(dt);billowSmoke.update(dt);
@@ -539,6 +575,7 @@ function updateParticles(dt){updateJetGas(dt);billowSmoke.update(dt);
   if(p.type==='ember'||p.type==='fire'){const gas=fireFluid.flow(p.x,p.y);p.vx+=(gas.u-p.vx)*dt*2;p.vy+=(gas.v-14-p.vy)*dt*1.6}
   else if(p.type==='smoke'){const gas=fireFluid.flow(p.x,p.y);p.vx+=(gas.u-p.vx)*dt*.7;p.vy+=(gas.v-9-p.vy)*dt*.6;p.size+=dt*3}
   else if(p.type==='exhaust'){p.vx+=(Math.sin(time*25+p.phase)*12-p.vx*.7)*dt;p.vy*=Math.exp(-dt*.4)}
+  else if(p.type==='rcs'){const drag=Math.exp(-dt*2.5);p.vx*=drag;p.vy*=drag;}
   else if(p.type==='ash'){p.vy+=dt*9;p.vx+=(Math.sin(time*2+p.phase)*9-p.vx)*dt}
   else{p.vy+=G*dt;p.hot=Math.max(0,p.hot-dt*.4)}
   p.x+=p.vx*dt;p.y+=p.vy*dt;
@@ -561,7 +598,7 @@ function background(){rect(0,0,W,H,3);const horizon=268-cam.y*.22;rect(0,horizon
 }
 function shipLabel(label,x,y,color){ctx.fillStyle=PAL[color];ctx.font='6px DepartureMono,Consolas,monospace';ctx.textAlign='left';ctx.fillText(label,Math.round(x),Math.round(y));}
 function drawShip(s){if(s.dirty)s.rebuild();const x=Math.round(s.x-cam.x),y=Math.round(s.y-cam.y);if(x<-140||x>W+140||y<-100||y>H+120)return;
- ctx.save();ctx.translate(x,y);ctx.rotate(s.angle);drawGear(s);ctx.drawImage(s.skin,-s.w/2,-s.h/2);
+ ctx.save();ctx.translate(x,y);ctx.rotate(s.angle);drawGear(s);ctx.drawImage(s.skin,-s.w/2,-s.h/2);drawRCS(s);
  if(!s.dead){for(const e of s.engines)if(e.alive){const ex=e.x-s.w/2,ey=e.y-s.h/2;rect(ex-2,ey-1,4,1,'#ffe9a9');rect(ex-1,ey,2,2,'#fff9d9')}
  const gx=0,gy=14-s.h/2;ctx.save();ctx.translate(gx,gy);ctx.rotate(s.aim-s.angle);rect(-4,-3,21,5,17);rect(-2,-3,16,1,23);rect(0,-2,16,1,21);rect(15,-3,3,6,18);rect(18,-2,3,4,16);rect(18,-2,3,1,24);for(let i=4;i<13;i+=3)rect(i,0,1,2,16);ctx.restore();rect(-6,gy-3,12,6,19);rect(-5,gy-3,10,1,24);rect(-4,gy-1,2,2,22);rect(3,gy-1,2,2,17)}
  ctx.restore();if(!s.dead&&state!=='briefing'){shipLabel(s.team?'HOSTILE / '+['SK-04','SK-11','SK-09'][s.variant]:'K-17',x-s.w/2,y-34,s.team?12:6);if(s.team){rect(x-s.w/2,y-30,34,2,1);rect(x-s.w/2,y-30,34*s.count/s.initial,2,14)}}
@@ -571,6 +608,7 @@ const fireColors=fireRamp.map(c=>'rgb('+c.join(',')+')');
 function drawParticles(smokeOnly=false){for(const p of particles){if((p.type==='smoke')!==smokeOnly)continue;const x=Math.round(p.x-cam.x),y=Math.round(p.y-cam.y);if(x<-40||x>W+40||y<-40||y>H+40)continue;const t=p.life/p.max,age=p.max-p.life;
  if(p.type==='smoke')continue;
  if(p.type==='ember'||p.type==='fire'){const flicker=.82+Math.sin(time*31+p.phase)*.18,heat=clamp(t*flicker+.32,0,1),col=fireColors[clamp(Math.floor(heat*7),0,7)];rect(x,y,1,1,col);if(t>.55&&(p.seed&7)===0){ctx.globalAlpha=.4;rect(x-1,y,1,1,11);rect(x,y-1,1,1,12);ctx.globalAlpha=1}if(Math.abs(p.vy)>45&&t>.4&&p.seed%3===0)rect(x,y+1,1,1,10);continue}
+ if(p.type==='rcs'){line(x,y,x-p.vx*.012,y-p.vy*.012,t>.5?'#d5f5ff':'#7baebc');rect(x,y,1,1,t>.5?'#f4ffff':'#8dbac5');continue}
  if(p.type==='exhaust'){rect(x,y,1,1,t>.7?7:t>.4?12:10);if(t>.6&&(p.seed&3)===0)rect(x+1,y,1,1,11);continue}
  if(p.type==='spark'){if(age<.22)line(x,y,x-p.vx*.014,y-p.vy*.014,11);rect(x,y,1,1,t>.55?7:t>.22?12:10);continue}
  if(p.type==='ash'){ctx.globalAlpha=Math.min(1,t*2);rect(x,y,1,1,4);ctx.globalAlpha=1;continue}
@@ -597,8 +635,8 @@ function render(){
  if(options.scan){ctx.globalAlpha=.055;for(let y=0;y<H;y+=3)rect(0,y,W,1,0);ctx.globalAlpha=1}tactical();
  if(state==='paused'){ctx.globalAlpha=$('settings').hidden?.6:.27;rect(0,0,W,H,0);ctx.globalAlpha=1;}frames++;stats.frames=frames;ctx.end?.();
 }
-function loop(ts){window.__ironwakeFPS?.frame(ts);if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
-function resizeViewport(){
+function loop(ts){window.__ironwakeFPS?.frame(ts);if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='preflight'){acc=0;requestAnimationFrame(loop);return}if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
+function resizeViewport(){rcsCameraOffset=0;
  const r=$('stage').getBoundingClientRect?.()||{width:1280,height:720};if(!r.width||!r.height)return;
  const scale=Math.max(Math.min(r.width/640,r.height/360),r.width/1280,r.height/720,.5),nw=Math.max(240,Math.round(r.width/scale)),nh=Math.max(180,Math.round(r.height/scale));
  viewScale=r.width/nw;ctx.resize?.(nw,nh);if(nw===W&&nh===H)return;const ow=W,oh=H;W=nw;H=nh;if(!ctx.isGPU){C.width=W;C.height=H;}fireFluid.resize();billowSmoke.resize();lightCanvas.width=Math.ceil(W/4);lightCanvas.height=Math.ceil(H/4);pointer.x=pointer.x/ow*W;pointer.y=pointer.y/oh*H;
@@ -607,13 +645,14 @@ function resizeViewport(){
 }
 function pointerPos(e){const r=C.getBoundingClientRect();pointer.x=(e.clientX-r.left)/r.width*W;pointer.y=(e.clientY-r.top)/r.height*H;pointer.inside=true}
 C.addEventListener('pointermove',pointerPos);C.addEventListener('pointerdown',e=>{if(e.button!==0)return;pointerPos(e);pointer.down=state==='playing';C.focus();C.setPointerCapture(e.pointerId)});C.addEventListener('pointerup',()=>pointer.down=false);C.addEventListener('pointercancel',()=>pointer.down=false);C.addEventListener('pointerleave',()=>pointer.inside=false);C.addEventListener('contextmenu',e=>e.preventDefault());window.addEventListener('pointerup',()=>pointer.down=false);
-window.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement)return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(!e.repeat){if(e.code==='Escape'){if(!$('settings').hidden){$('settings').hidden=true;return}pause()}if(e.code==='KeyR'&&state!=='briefing')reset(practice);if(e.code==='KeyM')setSound(!soundOn);if(e.code==='KeyG')toggleGear()}if(state==='playing')keys.add(e.code)});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();pointer.down=false;if(state==='playing')pause()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pause()});
-$('start').onclick=()=>reset(false);$('practice').onclick=()=>reset(true);$('pause').onclick=pause;$('sound').onclick=()=>setSound(!soundOn);$('options').onclick=()=>{if(state==='playing')pause();$('settings').hidden=!$('settings').hidden};$('closeSettings').onclick=()=>{$('settings').hidden=true;if(state==='paused')pause()};$('titleOptions').onclick=()=>{$('settings').hidden=false;$('settings').scrollTop=0};$('titleControls').onclick=()=>{$('settings').hidden=false;document.querySelector('.control-guide')?.scrollIntoView({block:'nearest'})};$('titleSound').onclick=()=>setSound(!soundOn);for(const name of ['shake','flash','scan'])$(name).onchange=e=>{options[name]=e.target.checked;if(name==='shake')document.documentElement.classList.toggle('steady-projection',!options.shake)};document.documentElement.classList.toggle('steady-projection',!options.shake);$('volume').oninput=()=>{if(soundOn)setSound(true)};
+window.addEventListener('keydown',e=>{if(state==='preflight'){if(e.code==='KeyM'&&!e.repeat)setSound(!soundOn);return;}if(e.target instanceof HTMLInputElement)return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(!e.repeat){if(e.code==='Escape'){if(!$('settings').hidden){$('settings').hidden=true;return}pause()}if(e.code==='KeyR'&&state!=='briefing')reset(practice);if(e.code==='KeyM')setSound(!soundOn);if(e.code==='KeyG')toggleGear()}if(state==='playing')keys.add(e.code)});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();pointer.down=false;if(state==='playing')pause()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pause()});
+$('start').onclick=beginOperation;$('practice').onclick=()=>reset(true);$('pause').onclick=pause;$('sound').onclick=()=>setSound(!soundOn);$('options').onclick=()=>{if(state==='playing')pause();$('settings').hidden=!$('settings').hidden};$('closeSettings').onclick=()=>{$('settings').hidden=true;if(state==='paused')pause()};$('titleOptions').onclick=()=>{$('settings').hidden=false;$('settings').scrollTop=0};$('titleControls').onclick=()=>{$('settings').hidden=false;document.querySelector('.control-guide')?.scrollIntoView({block:'nearest'})};$('titleSound').onclick=()=>setSound(!soundOn);for(const name of ['shake','flash','scan'])$(name).onchange=e=>{options[name]=e.target.checked;if(name==='shake')document.documentElement.classList.toggle('steady-projection',!options.shake)};document.documentElement.classList.toggle('steady-projection',!options.shake);$('volume').oninput=()=>{if(soundOn)setSound(true)};
 player=new Ship(453,260,0);player.aim=-.2;ships=[player];cam={x:0,y:70};updateHUD();
 resizeViewport();window.addEventListener('resize',resizeViewport);if(typeof ResizeObserver==='function')new ResizeObserver(resizeViewport).observe($('stage'));
 // Condensation and scratches remain on the glass, behind the projected lettering.
 let glassSeed=17491;const glassRandom=()=>{glassSeed=(glassSeed*1664525+1013904223)>>>0;return glassSeed/4294967296};$('titleGlass').innerHTML=Array.from({length:92},(_,i)=>{const x=(glassRandom()*100).toFixed(2),y=(glassRandom()*100).toFixed(2),w=2+glassRandom()*4,h=3+glassRandom()*9;return i<74?`<i style="left:${x}%;top:${y}%;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;opacity:${(.25+glassRandom()*.5).toFixed(2)}"></i>`:`<i class="scratch" style="left:${x}%;top:${y}%;width:${(20+glassRandom()*140).toFixed(0)}px"></i>`}).join('');
 // Read-only diagnostics are useful for performance and regression checks.
 window.IRONWAKE={snapshot:()=>({state,viewport:{width:W,height:H},rendering:ctx.diagnostics?.()||{type:'Canvas 2D'},time,kills,shots,hits,hull:player.count/player.initial,engines:player.engineRatio,player:{x:player.x,y:player.y,vx:player.vx,vy:player.vy},ships:ships.map(s=>({team:s.team,dead:s.dead,cells:s.count,initial:s.initial,engines:s.engineRatio,x:s.x,y:s.y})),collisions:{...collisionStats},smokeClouds:billowSmoke.puffs.length,jetParcels:jetGas.length,gear:{target:player.gearTarget,time:player.gearTime,grounded:!!player.grounded,legs:player.legs.map(l=>({cut:l.cut,hp:l.hp.slice()})),angle:player.angle,angularVelocity:player.av,contacts:player.contacts},particles:particles.length,chunks:chunks.length,pending:pending.length,flames:flames.length,fireCells:fireFluid.burning,flowCells:fireFluid.count,...stats})};
+window.IRONWAKE.attitude=()=>({angle:player.angle,angularVelocity:player.av,command:player.rcs?.command||0,torque:player.rcs?.torque||0,effort:player.rcs?.effort||0,cameraSway:rcsCameraOffset});
 requestAnimationFrame(loop);
 })();

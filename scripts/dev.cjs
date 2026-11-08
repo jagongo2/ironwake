@@ -12,6 +12,6 @@ const root=path.resolve(__dirname,'..');
     if(name!=='/'&&name!=='/index.html'&&!/^\/(src|assets)\//.test(name)){res.writeHead(404).end();return;}
     const file=path.resolve(root,'.'+(name==='/'?'/index.html':decodeURIComponent(name)));
     if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
-    try{res.setHeader('Content-Type',file.endsWith('.html')?'text/html; charset=utf-8':'text/javascript; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(fs.readFileSync(file));}catch{res.writeHead(404).end();}
+    try{res.setHeader('Content-Type',file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':file.endsWith('.png')?'image/png':'text/javascript; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(fs.readFileSync(file));}catch{res.writeHead(404).end();}
   }).listen(4173,'127.0.0.1',()=>console.log('IRONWAKE: http://localhost:4173 (save, then refresh)'));
 })();
