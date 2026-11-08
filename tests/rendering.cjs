@@ -30,7 +30,7 @@ const server=http.createServer((req,res)=>{
  if(!(/^\/(src|assets)\//.test(name)||name==='/'||name==='/index.html')){res.writeHead(404).end();return;}
  const file=path.resolve(root,'.'+(name==='/'?'/index.html':name));
  if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
- try{if(file.endsWith('.png')){res.setHeader('Content-Type','image/png');res.end(fs.readFileSync(file));return;}let s=fs.readFileSync(file,'utf8');
+ try{if(/\.(png|ogg)$/.test(file)){res.setHeader('Content-Type',file.endsWith('.ogg')?'audio/ogg':'image/png');res.end(fs.readFileSync(file));return;}let s=fs.readFileSync(file,'utf8');
   if(name==='/src/game.js'){
    s=s.replace('function loop(ts){','function loop(ts){if(manual)return;const started=performance.now();if(measure&&lastSample)intervals.push(ts-lastSample);lastSample=ts;');
    s=s.replace('render();requestAnimationFrame(loop)','render();if(measure)work.push(performance.now()-started);requestAnimationFrame(loop)');

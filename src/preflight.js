@@ -63,7 +63,7 @@ export function createPreflight() {
     return image.decode().catch(() => {});
   });
   const setPhase = value => {phase = value;root.dataset.phase = value;};
-  const sound = kind => callbacks?.sound?.(kind);
+  const sound = (kind,detail) => callbacks?.sound?.(kind,detail);
   const reduceMotion = () => motion.matches || callbacks?.motion === false;
   const gripHit = root.querySelector('.lever-grip-hit');
   const leverView = createLeverView(root.querySelector('.lever-canvas'),box=>{
@@ -171,7 +171,7 @@ export function createPreflight() {
   }
   switches.forEach(button=>button.addEventListener('click',()=>{
     if(phase !== 'service')return;
-    button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed') !== 'true'));sound('switch');updateChecks(button);
+    button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed') !== 'true'));sound('switch',{on:button.getAttribute('aria-pressed')==='true',system:button.dataset.system});updateChecks(button);
   }));
   returnButton.addEventListener('click',()=>leave(false));
   lever.addEventListener('pointerdown',event=>{

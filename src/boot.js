@@ -2,6 +2,7 @@
 import { createRenderer } from '../assets/renderer.js';
 import { createPreflight } from './preflight.js';
 import { stepRCS, stepRCSSway, rcsNozzleAlive } from './rcs.js';
+import {createGameSound} from './sound.js';
 
 if(new URLSearchParams(location.search).get('renderer')==='canvas'){
   window.__ironwakeGraphics=null;
@@ -17,4 +18,5 @@ if(new URLSearchParams(location.search).get('renderer')==='canvas'){
 await document.fonts?.load('10px DepartureMono');
 window.__ironwakePreflight = createPreflight();
 window.__ironwakeRCS = {step: stepRCS, sway: stepRCSSway, nozzleAlive: rcsNozzleAlive};
+window.__ironwakeSound = createGameSound();
 await import('./game.js');

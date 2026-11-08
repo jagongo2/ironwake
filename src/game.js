@@ -14,11 +14,14 @@ let state='briefing',practice=false,ships=[],player,bullets=[],particles=[],chun
 const MAX_PARTICLES=3200,MAX_FLAMES=14;
 let rcsCameraOffset=0;
 const stats={maxParticles:0,maxChunks:0,maxFlames:0,frames:0};
-// All audio is synthesized locally; a user gesture starts the AudioContext.
-let audio=null,master=null,engine=null,engineGain=null,soundOn=false,noiseBuffer=null;
-function initAudio(){if(audio)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();master=audio.createGain();master.gain.value=0;master.connect(audio.destination);noiseBuffer=audio.createBuffer(1,audio.sampleRate*2,audio.sampleRate);const d=noiseBuffer.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;engine=audio.createOscillator();engine.type='sawtooth';engine.frequency.value=34;const f=audio.createBiquadFilter();f.type='lowpass';f.frequency.value=130;engineGain=audio.createGain();engineGain.gain.value=.015;engine.connect(f);f.connect(engineGain);engineGain.connect(master);engine.start();}
-function setSound(on){initAudio();soundOn=on;if(audio){audio.resume().catch(()=>{});master.gain.setTargetAtTime(on?Number($('volume').value)/100*.55:0,audio.currentTime,.05)}$('sound').textContent=on?'소리 ON':'소리 OFF';$('sound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');$('titleSoundState').textContent=on?'켜짐':'꺼짐';$('titleSound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');}
-function boom(size=1,metal=false){if(!audio||!soundOn)return;const t=audio.currentTime;const n=audio.createBufferSource();n.buffer=noiseBuffer;const f=audio.createBiquadFilter();f.type=metal?'highpass':'lowpass';f.frequency.setValueAtTime(metal?1200:1300,t);if(!metal)f.frequency.exponentialRampToValueAtTime(70,t+.5*size);const g=audio.createGain();g.gain.setValueAtTime(Math.min(.7,size*.36),t);g.gain.exponentialRampToValueAtTime(.001,t+(metal?.12:.7*size));n.connect(f);f.connect(g);g.connect(master);n.start(t);n.stop(t+Math.max(.2,.8*size));if(!metal){const o=audio.createOscillator(),og=audio.createGain();o.frequency.setValueAtTime(85,t);o.frequency.exponentialRampToValueAtTime(22,t+.4);og.gain.setValueAtTime(.27*size,t);og.gain.exponentialRampToValueAtTime(.001,t+.5*size);o.connect(og);og.connect(master);o.start(t);o.stop(t+.7*size)}}
+// Sample-based mechanical layers and continuous beds live in the sound module.
+let audio=null,soundOn=false;
+function initAudio(){if(!audio)audio=window.__ironwakeSound?.unlock()||null;}
+function setSound(on){initAudio();soundOn=on;window.__ironwakeSound?.setEnabled(on,Number($('volume').value)/100);$('sound').textContent=on?'소리 ON':'소리 OFF';$('sound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');$('titleSoundState').textContent=on?'켜짐':'꺼짐';$('titleSound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');}
+function playSound(name,options){if(soundOn)return window.__ironwakeSound?.play(name,options);}
+function boom(size=1,metal=false,x=player?.x,y=player?.y){playSound(metal?'metal':'explosion',{size,x,y});}
+const soundFrame={mode:'briefing',x:0,y:0,width:640,throttle:1,integrity:1,dead:false,fire:0};
+function syncAudio(){if(!audio||!soundOn||!player)return;soundFrame.mode=state;soundFrame.x=player.x;soundFrame.y=player.y;soundFrame.width=W;soundFrame.throttle=player.throttle;soundFrame.integrity=player.engineRatio;soundFrame.dead=player.dead;soundFrame.fire=0;for(const f of flames)if(f.owner===player&&f.kind==='fuel')soundFrame.fire+=f.strength*.3;window.__ironwakeSound?.update(soundFrame);}
 function notice(s,duration=3){$('message').textContent=s;msgTimer=duration;}
 function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
 // Fuel, heat, smoke and velocity share a world-space flow simulation at 30 Hz.
@@ -166,7 +169,7 @@ function emitEngine(s,e,dt){
  e.dust=(e.dust||0)-dt;const gap=FLOOR-p.y;
  if(gap<65&&gap>0&&e.dust<=0){e.dust=rand(.13,.3);billowSmoke.emit(p.x+rand(-6,6),FLOOR-3,rand(-28,28),rand(-9,-3),rand(2,4),rand(1,2),.28)}
 }
-function rcsHiss(){if(!audio||!soundOn)return;const t=audio.currentTime,n=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();n.buffer=noiseBuffer;f.type='highpass';f.frequency.value=1300;g.gain.setValueAtTime(.04,t);g.gain.exponentialRampToValueAtTime(.001,t+.085);n.connect(f);f.connect(g);g.connect(master);n.start(t);n.stop(t+.09);}
+function rcsHiss(){playSound('rcs',{x:player.x,y:player.y});}
 function emitRCS(s,dt){const r=s.rcs;if(!r)return;if(r.kicked)rcsHiss();const power=Math.max(r.effort,r.flare>0?.65:0);if(power<.025){r.emit=0;return;}
  r.emit+=dt*(18+28*power);const direction=r.jetDirection||Math.sign(r.torque)||r.command||1,cs=Math.cos(s.angle),sn=Math.sin(s.angle);
  while(r.emit>=1){r.emit--;for(let side=0;side<2;side++){const exhaust=side?-direction:direction;if(!window.__ironwakeRCS?.nozzleAlive(s,side,exhaust))continue;const p=s.world(side?s.w-11:10,exhaust>0?34:16),speed=70+power*55;addParticle(p.x,p.y,s.vx-sn*exhaust*speed+rand(-6,6),s.vy+cs*exhaust*speed+rand(-6,6),rand(.07,.13),1,'rcs',7);}}
@@ -201,10 +204,10 @@ function gearPose(s,side){const t=clamp(s.gearTime-side*.24,0,1.8),sign=side?1:-
  const tip={x:knee.x+sign*ram*5,y:knee.y+ram*17-(s.gearCompression||0)};
  return {root,knee,tip,swing,ram,foot,door,sign,t};
 }
-function toggleGear(){if(state!=='playing'||player.dead)return;player.gearTarget=!player.gearTarget;notice(player.gearTarget?'착륙장치 · 잠금 해제 / 전개':'착륙장치 · 유압 회수',2);boom(.09,true);updateHUD();}
+function toggleGear(){if(state!=='playing'||player.dead)return;player.gearTarget=!player.gearTarget;notice(player.gearTarget?'착륙장치 · 잠금 해제 / 전개':'착륙장치 · 유압 회수',2);playSound('gear',{x:player.x,y:player.y,on:player.gearTarget});updateHUD();}
 function updateGear(s,dt){
  const before=s.gearTime;s.gearTime=clamp(before+(s.gearTarget?dt:-dt),0,GEAR_DURATION);s.gearCompression=Math.max(0,s.gearCompression-dt*5);
- for(const k of [.2,.85,1.4,1.8,2.1])if((before<k&&s.gearTime>=k)||(before>k&&s.gearTime<=k)){if(s===player)boom(k===2.1?.12:.055,true)}
+ for(const k of [.2,.85,1.4,1.8,2.1])if((before<k&&s.gearTime>=k)||(before>k&&s.gearTime<=k)){if(s===player)playSound('gearLatch',{size:k===2.1?1:.45,x:s.x,y:s.y})}
 }
 // Every ground support comes from a surviving rendered cell. There is no
 // fixed hull-height or invisible landing-gear rectangle in this solver.
@@ -302,7 +305,7 @@ function solveGround(s,dt){
  s.av*=Math.exp(-dt*.5);if(Math.abs(s.av)<.0003)s.av=0;
  if(!wasGrounded&&impact>8){for(const p of active.filter((p,i,a)=>a.findIndex(q=>q.side===p.side&&q.kind===p.kind)===i))billowSmoke.emit(s.x+p.x,FLOOR-2,rand(-12,12),-6,3,1.8,.3)}
  if(!wasGrounded){const safe=active.every(p=>p.kind==='gear'&&s.legs[p.side].cut===4)&&s.gearTime>=2.05?65:28;
-  if(impact>safe){const p=active.reduce((a,b)=>a.y>b.y?a:b);damage(s,s.x+p.x,FLOOR-1,impact>100?10:6,impact>100?6:3);boom(Math.min(.8,impact/160),true)}
+  if(impact>safe){const p=active.reduce((a,b)=>a.y>b.y?a:b);damage(s,s.x+p.x,FLOOR-1,impact>100?10:6,impact>100?6:3);boom(Math.min(.8,impact/160),true,s.x,FLOOR)}
  }
 }
 
@@ -386,7 +389,7 @@ function explosion(x,y,size=1){blasts.push({x,y,age:0,size,seed:Math.random()*40
  for(let i=0;i<Math.floor(85*size);i++){const a=rand(-Math.PI,Math.PI),s=rand(12,105)*Math.sqrt(size);addParticle(x+rand(-5,5)*size,y+rand(-4,4)*size,Math.cos(a)*s,Math.sin(a)*s-20,rand(.35,1.7)*Math.sqrt(size),1,'ember',13)}
  for(let i=0;i<Math.floor(30*size);i++){const a=rand(-Math.PI,Math.PI),s=rand(45,175)*size;addParticle(x,y,Math.cos(a)*s,Math.sin(a)*s,rand(.25,1.3),1,'spark',13)}
  for(let i=0;i<Math.floor(6*size);i++)addParticle(x+rand(-8,8),y+rand(-6,6),rand(-22,22),rand(-26,-8),rand(.8,2.3),rand(7,14)*Math.sqrt(size),'smoke',2);
- shake=Math.min(7,shake+size*2.4);flash=Math.min(.18,flash+.035*size);boom(size);
+ shake=Math.min(7,shake+size*2.4);flash=Math.min(.18,flash+.035*size);boom(size,false,x,y);
 }
 function detach(s){
  // Connectivity is evaluated only after damage, never once per frame.
@@ -480,7 +483,7 @@ function collideShips(a,b,dt){if(a.count<10||b.count<10)return false;const c=shi
   for(let k=0;k<Math.min(24,4+Math.ceil(closing*.12+slip*.06));k++){const along=rand(-1,1)*(12+slip*.3),speed=rand(4,24);addParticle(p.x+rand(-2,2),p.y+rand(-2,2),-ny*along+nx*speed,nx*along+ny*speed,rand(.12,.55),1,'spark',24)}
   if(ca+cb>3)billowSmoke.emit(p.x,p.y,(a.vx+b.vx)*.2,-rand(3,9),rand(2,4),rand(.5,1.3),.22);
   if(slip>35&&closing>50)for(let k=0;k<3;k++)addParticle(p.x,p.y,rand(-12,12),rand(-14,5),.3,1,'ember',11);
-  if(closing>18)boom(Math.min(.35,.08+closing*.0015),true);shake=Math.min(3,shake+Math.min(1.4,impulse*.025));
+  if(closing>18)boom(Math.min(.35,.08+closing*.0015),true,p.x,p.y);shake=Math.min(3,shake+Math.min(1.4,impulse*.025));
  }
  if(a.y+gearClearance(a)>FLOOR)solveGround(a,dt);if(b.y+gearClearance(b)>FLOOR)solveGround(b,dt);
  return true;
@@ -508,20 +511,10 @@ function pendingPosition(p){if(!p.hazard)return p.ship.world(p.x,p.y);const h=p.
 }
 
 function damage(s,wx,wy,radius,power=3){if(s.dead&&s.count<10)return;const gearHits=damageGear(s,wx,wy,radius,power),p=s.local(wx,wy),rr=radius*radius;let removed=0;for(let y=Math.max(0,Math.floor(p.y-radius));y<Math.min(s.h,Math.ceil(p.y+radius));y++)for(let x=Math.max(0,Math.floor(p.x-radius));x<Math.min(s.w,Math.ceil(p.x+radius));x++){let d=(x-p.x)**2+(y-p.y)**2,i=x+y*s.w;if(d>rr||!s.mat[i])continue;let hit=Math.max(1,Math.ceil(power*(1-Math.sqrt(d)/radius)));const before=s.hp[i];s.hp[i]=Math.max(0,s.hp[i]-hit);registerHazardHit(s,i,before-s.hp[i]);if(!s.hp[i]){if(removed%5===0){let q=s.world(x,y);addParticle(q.x,q.y,s.vx+(x-p.x)*rand(5,13),s.vy+(y-p.y)*rand(5,13),rand(.4,1.8),rand(1,2),'debris',s.col[i])}s.mat[i]=0;removed++}else if(s.mat[i]===1)s.col[i]=2;}
- if(removed){detach(s);s.recount();syncGearAttachments(s);s.dirty=true;if(!s.dead&&(s.count<s.initial*.27||s.coreCount<s.initialCore*.2))killShip(s)}processHazards(s);s.flash=.07;return removed+gearHits;}
+ if(removed){detach(s);s.recount();syncGearAttachments(s);s.dirty=true;if(!s.dead&&(s.count<s.initial*.27||s.coreCount<s.initialCore*.2))killShip(s)}processHazards(s);s.flash=.07;playSound('hit',{x:wx,y:wy,size:Math.min(1.5,power/4)});return removed+gearHits;}
 function killShip(s){if(s.dead)return;s.dead=true;s.deathTime=0;explosion(s.x,s.y,2);for(let i=0;i<4;i++)pending.push({ship:s,x:rand(8,s.w-8),y:rand(16,35),t:.15+i*.17,radius:rand(9,16),wreckCascade:true});for(let i=0;i<2;i++){const x=s.w*(.3+i*.4),y=23,q=s.world(x,y);ignite(q.x,q.y,1.3,rand(5,8),s,x,y,'fuel')}if(s.team){kills++;notice('적 함선 격침 · '+kills+' / 3',4);slow=.1;if(kills===3&&!practice){result='victory';endTimer=2.2}}else{result='defeat';endTimer=2;notice('기함 손실 · 비상 탈출',5)}}
-function fire(s,heavy=false){if(s.dead||s.cool>0||(!heavy&&s.overheated)||(heavy&&s.heavy>0))return false;let a=s.aim;const muzzle=s.world(s.w/2,14);let x=muzzle.x+Math.cos(a)*17,y=muzzle.y+Math.sin(a)*17;const speed=heavy?280:s.team?215:370;bullets.push({x,y,px:x,py:y,vx:Math.cos(a)*speed+s.vx*.35,vy:Math.sin(a)*speed+s.vy*.35,team:s.team,owner:s,heavy,life:4});s.cool=heavy?.38:s.team?.95:.18;if(heavy)s.heavy=5.5;else s.heat=Math.min(1,s.heat+.105);if(s.heat>=1){s.overheated=true;if(!s.team)notice('포신 과열 · 냉각 중',2)}s.vx-=Math.cos(a)*(heavy?14:2.2);s.vy-=Math.sin(a)*(heavy?10:1.2);for(let i=0;i<7;i++)addParticle(x,y,Math.cos(a)*rand(30,80)+rand(-10,10),Math.sin(a)*rand(30,80)+rand(-10,10),rand(.04,.12),heavy?5:3,'fire',13);boom(heavy?.8:.27);if(!s.team){shots++;shake=Math.min(4,shake+(heavy?2:.45))}return true;}
-function hangarSound(kind){
- if(!audio||!soundOn)return;
- const now=audio.currentTime,motor=kind==='motor',impact=kind==='impact',latch=kind==='lever',home=kind==='lever-home',detent=kind==='detent',duration=motor?.7:impact?.34:latch?.32:home?.18:detent?.09:.11;
- const noise=audio.createBufferSource();noise.buffer=noiseBuffer;
- const filter=audio.createBiquadFilter();filter.type=detent?'bandpass':'lowpass';filter.Q.value=detent?.85:.7;filter.frequency.setValueAtTime(motor?430:impact?1100:latch?1350:home?650:detent?720:2100,now);
- filter.frequency.exponentialRampToValueAtTime(motor?90:120,now+duration);
- const gain=audio.createGain();gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(motor?.11:impact?.45:latch?.25:home?.08:detent?.05:.12,now+(latch||home?.003:.012));gain.gain.exponentialRampToValueAtTime(.001,now+duration);
- noise.connect(filter);filter.connect(gain);gain.connect(master);noise.start(now);noise.stop(now+duration);
- if(impact||latch||home){const oscillator=audio.createOscillator(),bass=audio.createGain(),tail=impact?.3:latch?.38:.18;oscillator.frequency.setValueAtTime(impact?65:latch?58:85,now);oscillator.frequency.exponentialRampToValueAtTime(impact?25:latch?28:42,now+tail*.75);bass.gain.setValueAtTime(impact?.45:latch?.20:.065,now);bass.gain.exponentialRampToValueAtTime(.001,now+tail);oscillator.connect(bass);bass.connect(master);oscillator.start(now);oscillator.stop(now+tail+.01);}
- if(latch)for(const [frequency,volume,tail] of [[148,.036,.55],[281,.019,.38],[437,.008,.23]]){const ring=audio.createOscillator(),gain=audio.createGain();ring.type='sine';ring.frequency.value=frequency;gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.0001,now+tail);ring.connect(gain);gain.connect(master);ring.start(now);ring.stop(now+tail+.01);}
-}
+function fire(s,heavy=false){if(s.dead||s.cool>0||(!heavy&&s.overheated)||(heavy&&s.heavy>0))return false;let a=s.aim;const muzzle=s.world(s.w/2,14);let x=muzzle.x+Math.cos(a)*17,y=muzzle.y+Math.sin(a)*17;const speed=heavy?280:s.team?215:370;bullets.push({x,y,px:x,py:y,vx:Math.cos(a)*speed+s.vx*.35,vy:Math.sin(a)*speed+s.vy*.35,team:s.team,owner:s,heavy,life:4});s.cool=heavy?.38:s.team?.95:.18;if(heavy)s.heavy=5.5;else s.heat=Math.min(1,s.heat+.105);if(s.heat>=1){s.overheated=true;if(!s.team)notice('포신 과열 · 냉각 중',2)}s.vx-=Math.cos(a)*(heavy?14:2.2);s.vy-=Math.sin(a)*(heavy?10:1.2);for(let i=0;i<7;i++)addParticle(x,y,Math.cos(a)*rand(30,80)+rand(-10,10),Math.sin(a)*rand(30,80)+rand(-10,10),rand(.04,.12),heavy?5:3,'fire',13);playSound(heavy?'heavyShot':'lightShot',{x,y,size:heavy?1.5:.8});if(!s.team){shots++;shake=Math.min(4,shake+(heavy?2:.45))}return true;}
+function hangarSound(kind,detail={}){playSound(kind,{...detail,ui:true});}
 function beginOperation(){
  if(state!=='briefing'&&state!=='result')return;
  if(!window.__ironwakePreflight){reset(false);return;}
@@ -568,7 +561,7 @@ function update(dt){time+=dt;
  if(rcsCameraOffset){cam.x-=rcsCameraOffset;rcsCameraOffset=0;}
  shake*=Math.exp(-dt*8);flash*=Math.exp(-dt*12);slow=Math.max(0,slow-dt);cam.x=lerp(cam.x,clamp(player.x-W*.38+player.vx*.3,0,Math.max(0,WORLD-W)),1-Math.exp(-dt*3));cam.y=lerp(cam.y,clamp(player.y-H*.47+player.vy*.2,0,Math.max(0,FLOOR-H+45)),1-Math.exp(-dt*3));
  if(player.rcs&&window.__ironwakeRCS){const offset=window.__ironwakeRCS.sway(player.rcs,dt,options.shake),base=cam.x;cam.x=clamp(base+offset,0,Math.max(0,WORLD-W));rcsCameraOffset=cam.x-base;}
- if(result){endTimer-=dt;if(endTimer<=0)showResult()}if(practice&&kills===3&&!result){result='victory';endTimer=2}msgTimer-=dt;if(msgTimer<=0)notice(practice?'사격 시험 · 적 무장 정지':player.engineRatio<.75?'기관 손상 · 추력 저하':'',4);hudTimer-=dt;if(hudTimer<=0){updateHUD();hudTimer=.1}if(engine&&audio){engine.frequency.setTargetAtTime(29+player.throttle*12+Math.abs(player.vx)*.05,audio.currentTime,.1);engineGain.gain.setTargetAtTime(player.dead?.002:.018+player.throttle*.012,audio.currentTime,.1)}stats.maxParticles=Math.max(stats.maxParticles,particles.length);stats.maxChunks=Math.max(stats.maxChunks,chunks.length);stats.maxFlames=Math.max(stats.maxFlames,flames.length);
+ if(result){endTimer-=dt;if(endTimer<=0)showResult()}if(practice&&kills===3&&!result){result='victory';endTimer=2}msgTimer-=dt;if(msgTimer<=0)notice(practice?'사격 시험 · 적 무장 정지':player.engineRatio<.75?'기관 손상 · 추력 저하':'',4);hudTimer-=dt;if(hudTimer<=0){updateHUD();hudTimer=.1}stats.maxParticles=Math.max(stats.maxParticles,particles.length);stats.maxChunks=Math.max(stats.maxChunks,chunks.length);stats.maxFlames=Math.max(stats.maxFlames,flames.length);
 }
 function updateParticles(dt){updateJetGas(dt);billowSmoke.update(dt);
  const end=particles.length;for(let i=end-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles[i]=particles[particles.length-1];particles.pop();continue}p.px=p.x;p.py=p.y;const age=p.max-p.life;
@@ -635,7 +628,7 @@ function render(){
  if(options.scan){ctx.globalAlpha=.055;for(let y=0;y<H;y+=3)rect(0,y,W,1,0);ctx.globalAlpha=1}tactical();
  if(state==='paused'){ctx.globalAlpha=$('settings').hidden?.6:.27;rect(0,0,W,H,0);ctx.globalAlpha=1;}frames++;stats.frames=frames;ctx.end?.();
 }
-function loop(ts){window.__ironwakeFPS?.frame(ts);if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='preflight'){acc=0;requestAnimationFrame(loop);return}if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
+function loop(ts){window.__ironwakeFPS?.frame(ts);syncAudio();if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.1);last=ts;if(state==='preflight'){acc=0;requestAnimationFrame(loop);return}if(state==='playing'){acc+=elapsed*(slow>0?.55:1);let n=0;while(acc>=STEP&&n<6&&state==='playing'){update(STEP);acc-=STEP;n++}}else{acc=0;if(state==='briefing'){time+=elapsed;player.y=cam.y+H*.54+Math.sin(time*.6)*2;player.aim=-.2;player.throttle=1;for(const e of player.engines)if(e.alive)emitEngine(player,e,elapsed);updateJetGas(elapsed);billowSmoke.update(elapsed)}}render();requestAnimationFrame(loop)}
 function resizeViewport(){rcsCameraOffset=0;
  const r=$('stage').getBoundingClientRect?.()||{width:1280,height:720};if(!r.width||!r.height)return;
  const scale=Math.max(Math.min(r.width/640,r.height/360),r.width/1280,r.height/720,.5),nw=Math.max(240,Math.round(r.width/scale)),nh=Math.max(180,Math.round(r.height/scale));
@@ -653,6 +646,7 @@ resizeViewport();window.addEventListener('resize',resizeViewport);if(typeof Resi
 let glassSeed=17491;const glassRandom=()=>{glassSeed=(glassSeed*1664525+1013904223)>>>0;return glassSeed/4294967296};$('titleGlass').innerHTML=Array.from({length:92},(_,i)=>{const x=(glassRandom()*100).toFixed(2),y=(glassRandom()*100).toFixed(2),w=2+glassRandom()*4,h=3+glassRandom()*9;return i<74?`<i style="left:${x}%;top:${y}%;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;opacity:${(.25+glassRandom()*.5).toFixed(2)}"></i>`:`<i class="scratch" style="left:${x}%;top:${y}%;width:${(20+glassRandom()*140).toFixed(0)}px"></i>`}).join('');
 // Read-only diagnostics are useful for performance and regression checks.
 window.IRONWAKE={snapshot:()=>({state,viewport:{width:W,height:H},rendering:ctx.diagnostics?.()||{type:'Canvas 2D'},time,kills,shots,hits,hull:player.count/player.initial,engines:player.engineRatio,player:{x:player.x,y:player.y,vx:player.vx,vy:player.vy},ships:ships.map(s=>({team:s.team,dead:s.dead,cells:s.count,initial:s.initial,engines:s.engineRatio,x:s.x,y:s.y})),collisions:{...collisionStats},smokeClouds:billowSmoke.puffs.length,jetParcels:jetGas.length,gear:{target:player.gearTarget,time:player.gearTime,grounded:!!player.grounded,legs:player.legs.map(l=>({cut:l.cut,hp:l.hp.slice()})),angle:player.angle,angularVelocity:player.av,contacts:player.contacts},particles:particles.length,chunks:chunks.length,pending:pending.length,flames:flames.length,fireCells:fireFluid.burning,flowCells:fireFluid.count,...stats})};
+window.IRONWAKE.audio=()=>window.__ironwakeSound?.diagnostics()||{state:'unavailable'};
 window.IRONWAKE.attitude=()=>({angle:player.angle,angularVelocity:player.av,command:player.rcs?.command||0,torque:player.rcs?.torque||0,effort:player.rcs?.effort||0,cameraSway:rcsCameraOffset});
 requestAnimationFrame(loop);
 })();
