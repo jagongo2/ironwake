@@ -29,6 +29,7 @@ function waveforms(){
  make('pressure',1.0,t=>(Math.sin(2*Math.PI*(66*t-17*t*t))+.4*Math.sin(2*Math.PI*113*t))*Math.exp(-t*8));
  make('punch',.20,(t,n,low)=>(Math.sin(2*Math.PI*(94*t-38*t*t))*.72+Math.sin(t*2*Math.PI*151)*.18)*Math.exp(-t*24)+low*Math.exp(-t*58)*.24);
  make('tail',1.8,(t,n,low,brown)=>(low*.55+brown*.8)*Math.exp(-t*3)*(1-Math.exp(-t*24)));
+ make('cannonRoll',1.3,(t,n,low,brown)=>(Math.sin(2*Math.PI*(62*t-7*t*t))*.55+Math.sin(2*Math.PI*103*t)*.16+brown*.3)*Math.exp(-t*4.8)*(1-Math.exp(-t*65)));
  make('metal',.36,(t,n)=>n*Math.exp(-t*85)*.35+(Math.sin(t*2*Math.PI*283)+.5*Math.sin(t*2*Math.PI*719)+.24*Math.sin(t*2*Math.PI*1181))*Math.exp(-t*18)*.25);
  make('switch',.095,(t,n)=>n*Math.exp(-t*100)+Math.sin(t*2*Math.PI*370)*Math.exp(-t*75)*.3);
  make('air',.18,(t,n,low)=>(n-low)*Math.sin(Math.PI*Math.min(1,t/.18))*Math.exp(-t*12));
@@ -53,10 +54,11 @@ function waveforms(){
 }
 let pcm;
 
-export function createGameSound({context=null,loadSamples=true}={}){
+export function createGameSound({context=null,loadSamples=true,bodySaturation=1}={}){
  pcm||=waveforms();
  const rng=random(0xf17c09),buffers=new Map(),voices=[],loops=[],limits=new Map(),counts={};
- let ctx=context,output,bedBus,bedTone,combatBus,combatNodes=[],enabled=false,volume=.45,ready=Promise.resolve(),loaded=0,failed=0,muteTimer=0;
+ let ctx=context,output,bedBus,bedTone,combatBus,worldBus,damageDry,damageWet,combatNodes=[],enabled=false,volume=.45,ready=Promise.resolve(),loaded=0,failed=0,muteTimer=0;
+ let damageSeverity=0;
  let engineLoad=0,engineAirLevel=0,duckUntil=0,duckDepth=0;
  let lastUpdate=-1,lastMode='',engineLevel=0,loopGain=[],loopSource=[],disposed=false,lastEvent=null,serial=0;
  const listener={x:265,y:300,width:640};
@@ -73,16 +75,21 @@ export function createGameSound({context=null,loadSamples=true}={}){
   const curve=new Float32Array(2049);for(let i=0;i<curve.length;i++)curve[i]=.97*Math.tanh((i/1024-1)/.97);
   ceiling.curve=curve;ceiling.oversample='none';output=ctx.createGain();output.gain.value=0;
   // Only the continuous beds duck. A cannon must not turn down the next cannon.
-  bedBus=ctx.createGain();bedTone=ctx.createBiquadFilter();bedTone.type='lowpass';bedTone.frequency.value=950;bedTone.Q.value=.6;bedBus.connect(bedTone);bedTone.connect(output);
-  // One shared compensated saturation/EQ chain, not an effector per particle.
-  // Filtering AFTER saturation also removes its newly generated upper harmonics.
-  combatBus=ctx.createGain();combatBus.gain.value=.72;
-  const bass=ctx.createBiquadFilter(),presence=ctx.createBiquadFilter(),warm=ctx.createWaveShaper(),rolloff=ctx.createBiquadFilter();
-  bass.type='lowshelf';bass.frequency.value=95;bass.gain.value=2;
-  presence.type='peaking';presence.frequency.value=3500;presence.Q.value=.7;presence.gain.value=-9;
-  const tape=new Float32Array(2049);for(let i=0;i<tape.length;i++)tape[i]=Math.tanh((i/1024-1)*1.6)/1.6;
-  warm.curve=tape;warm.oversample='2x';rolloff.type='lowpass';rolloff.frequency.value=3800;rolloff.Q.value=.6;
-  combatNodes=[combatBus,bass,presence,warm,rolloff];for(let i=0;i<combatNodes.length-1;i++)combatNodes[i].connect(combatNodes[i+1]);rolloff.connect(output);
+  worldBus=ctx.createGain();damageDry=ctx.createGain();damageWet=ctx.createGain();damageWet.gain.value=0;
+  const damageDrive=ctx.createGain(),damageShape=ctx.createWaveShaper(),damageTone=ctx.createBiquadFilter();damageDrive.gain.value=3;
+  const crush=new Float32Array(8193);for(let i=0;i<crush.length;i++){const x=i/4096-1;crush[i]=Math.round(Math.tanh(x*1.8)*32)/32;}
+  damageShape.curve=crush;damageShape.oversample='2x';damageTone.type='lowpass';damageTone.frequency.value=3600;damageTone.Q.value=.6;
+  worldBus.connect(damageDry);damageDry.connect(output);worldBus.connect(damageDrive);damageDrive.connect(damageShape);damageShape.connect(damageTone);damageTone.connect(damageWet);damageWet.connect(output);
+  bedBus=ctx.createGain();bedTone=ctx.createBiquadFilter();bedTone.type='highshelf';bedTone.frequency.value=1500;bedTone.gain.value=-3;bedBus.connect(bedTone);bedTone.connect(worldBus);
+  // Preserve the clean attack. Only a parallel 220-2200Hz body is driven hard
+  // enough to saturate at actual game levels; no blanket post-saturation low-pass.
+  combatBus=ctx.createGain();combatBus.gain.value=.74;
+  const dry=ctx.createGain(),body=ctx.createBiquadFilter(),drive=ctx.createGain(),warm=ctx.createWaveShaper(),bodyTop=ctx.createBiquadFilter(),wet=ctx.createGain();
+  dry.gain.value=.88;body.type='bandpass';body.frequency.value=650;body.Q.value=.5;drive.gain.value=5;
+  const tape=new Float32Array(4097);for(let i=0;i<tape.length;i++)tape[i]=Math.tanh((i/2048-1)*2.3);
+  warm.curve=tape;warm.oversample='2x';bodyTop.type='lowpass';bodyTop.frequency.value=2600;bodyTop.Q.value=.6;wet.gain.value=.06*clamp(bodySaturation,0,1);
+  combatBus.connect(dry);dry.connect(worldBus);combatBus.connect(body);body.connect(drive);drive.connect(warm);warm.connect(bodyTop);bodyTop.connect(wet);wet.connect(worldBus);
+  combatNodes=[combatBus,dry,body,drive,warm,bodyTop,wet,worldBus,damageDry,damageDrive,damageShape,damageTone,damageWet];
   output.connect(highpass);highpass.connect(compressor);compressor.connect(ceiling);ceiling.connect(ctx.destination);
   for(const name of ['engineLow','engineRattle','engineAir','fireBed']){
    const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=buffers.get(name);s.loop=true;g.gain.value=0;
@@ -137,6 +144,19 @@ export function createGameSound({context=null,loadSamples=true}={}){
  function stop(v){if(v.done)return;const t=ctx.currentTime;v.gain.gain.cancelScheduledValues(t);target(v.gain.gain,0,t,.002);for(const s of v.sources)try{s.stop(t+.008);}catch{} }
  function choose(prefix,fallback){const names=SAMPLE_FILES.filter(n=>n.startsWith(prefix));return names.length?names[Math.floor(rng()*names.length)]:fallback;}
  const sample=(name,fallback)=>buffers.has(name)?name:fallback;
+ function tuneVoice(v,t,initial=false){
+  if(v.ui)return;
+  const distance=Math.hypot(v.x-listener.x,v.y-listener.y),attenuation=1/(1+Math.pow(distance/460,1.45));
+  const pan=clamp((v.x-listener.x)/Math.max(240,listener.width*.7),-.85,.85),age=Math.max(0,t-v.started);
+  const attack=v.settle<1?v.settle+(1-v.settle)*Math.exp(-Math.max(0,age-.065)*9):1;
+  const cutoff=Math.max(450,(550+(v.near-550)/(1+(distance/310)**2))*attack);
+  if(initial){v.gain.gain.value=attenuation*v.level;v.tone.frequency.value=cutoff;if(v.settle<1)target(v.tone.frequency,cutoff*v.settle,t+.065,.11);if(v.pan.pan)v.pan.pan.value=pan;}
+  else{
+   target(v.gain.gain,attenuation*v.level,t,.055);
+   if(v.tone.frequency.cancelAndHoldAtTime)v.tone.frequency.cancelAndHoldAtTime(t);else v.tone.frequency.cancelScheduledValues(t);
+   target(v.tone.frequency,cutoff,t,.045);if(v.pan.pan)target(v.pan.pan,pan,t,.055);
+  }
+ }
  function layers(name,size,options){
   const force=Math.pow(size,.65);
   const metal=sample(choose('impactMetal_heavy','metal'),'metal'),plate=sample(choose('impactPlate_heavy','metal'),'metal');
@@ -144,17 +164,17 @@ export function createGameSound({context=null,loadSamples=true}={}){
   const scrape=sample('scratch_004.ogg','air');
   const punch=sample('steelPunch','punch');
   switch(name){
-   case 'lightShot':return [[punch,.24,.78],[sample('cannon-light.ogg','shotLight'),.42,.94,.012],['pressure',.1,1.1],['air',.018,.7,.045]];
-   case 'heavyShot':return [[punch,.60,.52],[sample('cannon-heavy.ogg','shotHeavy'),.44,.91,.028],['pressure',.28,.82],['tail',.10,.68,.075]];
+   case 'lightShot':return [[punch,.25,.9],[sample('cannon-light.ogg','shotLight'),.38,1,.006],['pressure',.14,1.15],[metal,.045,1.03,.052]];
+   case 'heavyShot':return [[punch,.50,.78],[sample('cannon-heavy.ogg','shotHeavy'),.50,1,.018],['pressure',.23,.9],['cannonRoll',.13,.9,.075]];
    case 'explosion':{
     // An impact snaps, fuel vents, and a wreck leaves a longer debris trail.
     // These are audio descriptions of existing events, not extra detonations.
     const wreck=options.kind==='wreck',fuel=options.kind==='fuel',large=wreck||fuel||size>1;
     const body=sample(large?'blast-wreck.ogg':'blast-impact.ogg','blast');
     const rate=wreck?clamp(.97-size*.07,.79,.95):fuel?1.02:large?clamp(1.13-size*.10,.88,1.1):clamp(1.12-size*.18,.94,1.1);
-    return [[body,(large?.38:.30)*force,rate],['pressure',(fuel?.24:.2)*force,large?.74:.95],
-     [wreck?punch:metal,(wreck?.28:.07)*Math.sqrt(size),wreck?.55:.62,large?.12:.045],
-     [fuel?'air':'tail',(fuel?.09:.08)*force,fuel?.43:.78,large?.09:.035]];
+    return [[body,(large?.28:.22)*force,rate],['pressure',(fuel?.25:.24)*force,large?.82:1],
+     [wreck?punch:metal,(wreck?.18:.07)*Math.sqrt(size),wreck?.78:.9,large?.09:.035],
+     [fuel?'air':'cannonRoll',(fuel?.065:.18)*force,fuel?.65:.9,large?.09:.035]];
    }
    case 'metal':return [[punch,.24+.13*size,.66],[plate,.065,.58,.015],['metal',.04,.75,.018]];
    case 'hit':return [[sample('armorStrike','punch'),.22,.8],[light,.1,.66,.008]];
@@ -190,14 +210,17 @@ export function createGameSound({context=null,loadSamples=true}={}){
    stop(oldest);voices.splice(voices.indexOf(oldest),1);
   }
   const gain=ctx.createGain(),panner=ctx.createStereoPanner?ctx.createStereoPanner():ctx.createGain();
-  // One inexpensive filter per event softens distant reports without a reverb
-  // processor, propagation delay or an unbounded graph of effect nodes.
+  // A nearby attack stays open; distance and the decay of the attack darken it.
+  // Parameters follow listener motion at the existing 30Hz audio update rate.
   const tone=ctx.createBiquadFilter();tone.type='lowpass';
-  const near=name==='heavyShot'?2700:name==='lightShot'?2500:name==='explosion'?3400:name==='rcs'?1200:2400;
-  tone.frequency.value=ui?18000:500+(near-500)*attenuation;tone.Q.value=.55;
-  if(panner.pan)panner.pan.value=pan;gain.gain.value=attenuation*(options.gain??1)*(.8+.2*Math.sqrt(size));gain.connect(tone);tone.connect(panner);panner.connect(ui?output:combatBus);
-  const v={id:++serial,priority,gain,pan:panner,tone,sources:[],done:false};voices.push(v);
-  const t=Math.max(now,options.when??now),variation=.97+rng()*.06;let pending=0;
+  const near=name==='heavyShot'?10000:name==='lightShot'?10500:name==='explosion'?9000:name==='rcs'?4000:7500;
+  tone.frequency.value=ui?18000:near;tone.Q.value=.55;
+  const t=Math.max(now,options.when??now),variation=ui?.99+rng()*.02:.95+rng()*.10,eventVolume=ui?1:.96+rng()*.08;
+  const level=(options.gain??1)*(.8+.2*Math.sqrt(size))*eventVolume;
+  if(panner.pan)panner.pan.value=pan;gain.gain.value=attenuation*level;gain.connect(tone);tone.connect(panner);panner.connect(ui?output:combatBus);
+  const settle=name==='lightShot'||name==='heavyShot'?.62:name==='explosion'?.48:1;
+  const v={id:++serial,priority,gain,pan:panner,tone,sources:[],done:false,ui,x,y,level,near,started:t,settle};voices.push(v);tuneVoice(v,t,true);
+  let pending=0;
   for(const [buffer,level,rate=1,delay=0] of layers(name,size,options)){
    const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=buffers.get(buffer);if(!s.buffer)continue;
    s.playbackRate.value=rate*variation;g.gain.value=level;s.connect(g);g.connect(gain);v.sources.push(s);pending++;
@@ -210,7 +233,7 @@ export function createGameSound({context=null,loadSamples=true}={}){
    duckDepth=Math.max(t<duckUntil?duckDepth:0,clamp(strength*.32,0,.55));
    target(p,1-duckDepth,t,.008);duckUntil=Math.max(duckUntil,end);target(p,1,duckUntil,.16);
   }
-  counts[name]=(counts[name]||0)+1;lastEvent={name,kind:options.kind||null,pan,attenuation,cutoff:tone.frequency.value};return true;
+  counts[name]=(counts[name]||0)+1;lastEvent={name,kind:options.kind||null,pan,attenuation,cutoff:tone.frequency.value,pitch:variation,volumeVariation:eventVolume};return true;
  }
  function update(frame){
   listener.x=frame.x;listener.y=frame.y;listener.width=frame.width;
@@ -218,16 +241,20 @@ export function createGameSound({context=null,loadSamples=true}={}){
   if(frame.mode===lastMode&&t-lastUpdate<1/30)return;lastUpdate=t;lastMode=frame.mode;
   const flying=frame.mode==='playing',hangar=frame.mode==='preflight';
   const strength=frame.dead?0:clamp(frame.integrity??1,0,1),throttle=clamp(frame.throttle??1,0,2);
+  const health=1-clamp(frame.damage??0,0,1);
+  damageSeverity=flying?clamp(Math.max((.48-health)/.38,(.4-strength)/.4*.6,frame.dead?.8:0),0,1):0;
+  target(damageDry.gain,1-damageSeverity*.10,t,.16);target(damageWet.gain,damageSeverity*.055,t,.16);
+  for(const voice of voices)tuneVoice(voice,t);
   // Rotor speed changes slowly; exhaust follows thrust more promptly. Damage
   // reduces total output while leaving a relatively rougher mechanical bed.
   engineLoad=throttle;engineLevel=flying?.085*strength*(.3+.7*Math.sqrt(throttle)):hangar?.008:.002;
   engineAirLevel=flying?.028*strength*Math.pow(throttle,1.35):0;
-  target(loopGain[0].gain,engineLevel,t,.2);target(loopGain[1].gain,engineLevel*(loopGain[4]?.13:.4)*(1+(1-strength)*.5),t,.14);
+  target(loopGain[0].gain,engineLevel*.65,t,.2);target(loopGain[1].gain,engineLevel*(loopGain[4]?.27:.4)*(1+(1-strength)*.5),t,.14);
   target(loopGain[2].gain,engineAirLevel,t,.09);
   target(loopGain[3].gain,flying?clamp(frame.fire||0,0,1)*.035:0,t,.18);
   target(loopSource[0].playbackRate,.84+throttle*.1,t,.24);target(loopSource[1].playbackRate,.70+throttle*.13,t,.2);
   target(loopSource[2].playbackRate,.72+throttle*.12,t,.16);
-  if(loopGain[4]){target(loopGain[4].gain,engineLevel*.85,t,.2);target(loopSource[4].playbackRate,.72+throttle*.12,t,.28);}
+  if(loopGain[4]){target(loopGain[4].gain,engineLevel*.95,t,.2);target(loopSource[4].playbackRate,.82+throttle*.12,t,.28);}
  }
  function setEnabled(on,value=volume){
   initialize();enabled=!!on;volume=clamp(Number(value)||0,0,1);
@@ -253,6 +280,6 @@ export function createGameSound({context=null,loadSamples=true}={}){
   unlock(){initialize();if(ctx?.state==='suspended'&&ctx.resume)ctx.resume().catch(()=>{});return ctx;},
   setEnabled,play,update,destroy,
   get context(){return ctx;},get ready(){return ready;},
-  diagnostics(){return {revision:'combat-3-low',enabled,volume,state:ctx?.state||'unavailable',loadedSamples:loaded,failedSamples:failed,sampledEngine:!!loopSource[4],sampledCombat:COMBAT_FILES.every(name=>buffers.has(name)),voices:voices.length,maxVoices:MAX_VOICES,engineLevel,engineLoad,engineAirLevel,events:{...counts},lastEvent};}
+  diagnostics(){return {revision:'combat-4-presence',enabled,volume,state:ctx?.state||'unavailable',loadedSamples:loaded,failedSamples:failed,sampledEngine:!!loopSource[4],sampledCombat:COMBAT_FILES.every(name=>buffers.has(name)),voices:voices.length,maxVoices:MAX_VOICES,engineLevel,engineLoad,engineAirLevel,damageSeverity,events:{...counts},lastEvent};}
  };
 }

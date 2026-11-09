@@ -20,8 +20,8 @@ function initAudio(){if(!audio)audio=window.__ironwakeSound?.unlock()||null;}
 function setSound(on){initAudio();soundOn=on;window.__ironwakeSound?.setEnabled(on,Number($('volume').value)/100);$('sound').textContent=on?'소리 ON':'소리 OFF';$('sound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');$('titleSoundState').textContent=on?'켜짐':'꺼짐';$('titleSound').setAttribute('aria-label',on?'소리 끄기':'소리 켜기');}
 function playSound(name,options){if(soundOn)return window.__ironwakeSound?.play(name,options);}
 function boom(size=1,metal=false,x=player?.x,y=player?.y,kind='impact'){playSound(metal?'metal':'explosion',{size,x,y,kind});}
-const soundFrame={mode:'briefing',x:0,y:0,width:640,throttle:1,integrity:1,dead:false,fire:0};
-function syncAudio(){if(!audio||!soundOn||!player)return;soundFrame.mode=state;soundFrame.x=player.x;soundFrame.y=player.y;soundFrame.width=W;soundFrame.throttle=player.throttle;soundFrame.integrity=player.engineRatio;soundFrame.dead=player.dead;soundFrame.fire=0;for(const f of flames)if(f.owner===player&&f.kind==='fuel')soundFrame.fire+=f.strength*.3;window.__ironwakeSound?.update(soundFrame);}
+const soundFrame={mode:'briefing',x:0,y:0,width:640,throttle:1,integrity:1,dead:false,fire:0,damage:0};
+function syncAudio(){if(!audio||!soundOn||!player)return;soundFrame.mode=state;soundFrame.x=player.x;soundFrame.y=player.y;soundFrame.width=W;soundFrame.throttle=player.throttle;soundFrame.integrity=player.engineRatio;soundFrame.dead=player.dead;soundFrame.damage=1-player.count/player.initial;soundFrame.fire=0;for(const f of flames)if(f.owner===player&&f.kind==='fuel')soundFrame.fire+=f.strength*.3;window.__ironwakeSound?.update(soundFrame);}
 function notice(s,duration=3){$('message').textContent=s;msgTimer=duration;}
 function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
 // Fuel, heat, smoke and velocity share a world-space flow simulation at 30 Hz.

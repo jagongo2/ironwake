@@ -6,8 +6,8 @@ and continuous engine/fire beds in `src/sound.js`.
 
 | Event | Layers and response |
 | --- | --- |
-| 57mm | short, lower-pitched rifle edit, compact steel knock and quiet gas release; shortened tail for repeated fire |
-| 180mm | low steel strike first, cannon body 28ms later, pressure and low rolling tail |
+| 57mm | short rifle edit with its attack retained, compact steel knock, pressure and a delayed metal action |
+| 180mm | steel strike first, recorded cannon body 18ms later, pressure and low rolling tail |
 | Explosion | trimmed demolition recording and pressure; impact, fuel and wreck events have different rates, gas and debris layers |
 | Hull impact | brief envelope-shaped plate strike with 20% sample-held/11-bit texture and quiet metal; no automatic explosion sound |
 | Engine | actual diesel recording, 60-120Hz hum, lower mechanical harmonics and band-limited air; thrust changes gain/pitch and damage reduces output |
@@ -20,36 +20,42 @@ and continuous engine/fire beds in `src/sound.js`.
 The new sources are selected CC0 material samples and a diesel field recording,
 not recordings made by this project and not original HighFleet sounds.
 See [asset provenance](../assets/audio/CREDITS.md). Four additional recording edits
-add about 71 KiB; all fourteen encoded sounds total about 191 KiB. The edits decode
-to about 1.3 MiB of mono float PCM. Buffers are retained and reused, with small
+add about 70 KiB; all fourteen encoded sounds total about 190 KiB. The edits decode
+to about 1 MiB of mono float PCM. Buffers are retained and reused, with small
 playback-rate variations. Gun recordings are source material for stylized weapons,
 not claimed to be literal recordings of the game's calibers. Pressure, gas and
 fallback layers remain synthesized.
 
-## Lower-tone remix after player feedback
+## Clear attacks and parallel body saturation
 
-The preceding mix was too high and noisy in play. Simply adding sub-bass on top
-would have increased overall noise. Recording edits now use lower pitch, a
-2.2-3.2kHz low-pass and a 9dB cut around 3.5kHz. The new steel transient is a short,
-pitched-down plate recording, so the heavy shot keeps an immediate physical
-attack while its recorded blast follows slightly later.
+The previous low-tone pass stacked 2.2-3.2kHz asset filtering, a 9dB presence cut,
+another event low-pass and another bus cut/filter. Player feedback correctly
+identified that as submerged. A unity-compensated shaper at low drive also had
+little nonlinear effect on small real game signals.
 
-Combat events share a 90Hz low shelf, 3.5kHz cut, gain-compensated soft saturation
-and a 3.8kHz post-filter. The master ceiling no longer boosts quiet inputs, and
-the compressor lets the initial impact through rather than flattening it. This
-is controlled soft saturation; it does not rely on clipping the device output.
-UI bypasses the combat bus. Propulsion uses a quiet 420Hz band-pass air layer,
-a 950Hz bed low-pass and slower, smaller pitch changes. Engine harmonics have a
-subtle four-second phase drift rather than an additional live flanger graph.
-There is no global HP-driven high-pass: engine damage changes output/roughness
-without stripping the low body from every battle sound.
+The current edits retain considerably more of the source attack: pitch 0.90 for
+guns, 1.00 / 0.94 for blasts, 7.5-10.5kHz asset low-pass and just a 2.5dB presence
+cut. The shared blanket presence cut and output low-pass are removed. A clean
+path carries the crack and mechanics. In parallel, a broad 650Hz body band is
+driven 5x into a `WaveShaperNode` tanh curve with 2x oversampling; a quiet wet
+return adds mid harmonics. Only this body return has a 2.6kHz low-pass. The master
+keeps its conservative, unity-slope soft ceiling and transient-preserving
+compressor. Layer balance, rather than extra blanket filtering, provides bass.
 
-An isolated 24kHz browser comparison at the unchanged 45% volume, with six-second
-captures and identical event positions, measured roughly 9-10dB lower RMS for
-shots/blasts and 7-8dB for propulsion. Repeated fire was about 10dB lower. The
-2.5-6kHz energy dropped substantially. These are PCM measurements of the test
-scenarios, not a subjective loudness or speaker-response guarantee. The ignored
-`artifacts/audio-tone-comparison.json` records the local before/after results.
+The [user reference](https://www.youtube.com/watch?v=LYoqIen6wiU) was sampled from
+public browser playback at approximately 0-12.85s and 14-25.94s for local PCM/FFT
+analysis. These mixed-combat sections retained upper-mid energy during attacks
+alongside substantial bass. They are not isolated gun stems and cannot establish
+the original game's DSP chain. No claim of direct subjective listening or exact
+timbre matching is made. Reference captures stay under ignored `artifacts/` and
+are not game assets. Tests now guard against removing all near-attack presence,
+as well as excessive upper-mid energy, and compare saturation enabled/bypassed
+at the same real signal level.
+
+Propulsion keeps a quiet 420Hz band-pass air layer. Its former 950Hz blanket
+low-pass is replaced by a gentle high shelf, with more recorded diesel/mechanical
+texture relative to the synthetic hum. Four-second harmonic phase drift and
+slower pitch changes remain; no extra live flanger graph is needed.
 
 ## Runtime and synchronization
 
@@ -61,12 +67,17 @@ scenarios, not a subjective loudness or speaker-response guarantee. The ignored
 - At most 28 tracked event voices, with priorities and short fades on retirement.
   Nearby repeated impacts/explosions are coalesced. Continuous beds use five loops.
 - Game positions drive stereo pan, distance attenuation and a single low-pass
-  filter per event, capped at 2.5-2.7kHz for guns / 3.4kHz for explosions up close.
-  Distant sounds lose more treble; UI sounds stay centered.
+  filter per event. Near attacks start open at 9-10.5kHz, then settle smoothly to
+  a darker body after 65ms. Distance reduces the cutoff toward 550Hz. Active event
+  parameters follow listener movement at 30Hz, rather than freezing at emission.
+- Pitch varies within +/-5% and gain within +/-4%, using the private sound PRNG.
+- Hull below 48%, major engine failure or death enables a limited 6-bit-amplitude
+  damage texture, blended at no more than 5.5% wet. Dry compensation limits gain
+  buildup. Healthy/preflight/menu audio clears it; UI bypasses the world mix.
 - Nearby heavy shots and large explosions briefly lower only the continuous beds
   using scheduled gain automation, recovering smoothly after 160-260ms. Further
   gunshots and UI clicks are not turned down by that bed automation.
-- Engine parameters update at most 30Hz. Master high-pass, compression and a bounded
+- World parameters update at most 30Hz. Master high-pass, compression and a bounded
   soft-saturation curve control low-frequency build-up and simultaneous events.
 - The volume slider and M/button mute remain. Muting fades and suspends the audio
   context; a hidden tab suspends it too. Enabling/returning resumes it.
@@ -85,7 +96,10 @@ weapon/fuel/wreck tails, distance filtering, engine thrust/damage response,
 stereo placement, 28-voice pressure, finite PCM bounded below 0.76, and fallback
 sound. Live controls cover light/heavy fire, RCS, gear,
 mute/resume, and volume. The hangar and rendering suites cover their existing
-flows. FFT checks also cover low-band body and restrained 2.5-6kHz energy in close
-and distant shots/blasts, including the synthesized fallback and full thrust.
+flows. FFT checks cover low/mid body and bounded 2.5-6kHz energy in close and
+distant shots/blasts, including the synthesized fallback and full thrust. Near
+shots must retain measurable presence. A saturation A/B checks that body mids
+actually change, an offline moving-listener test checks stereo/attenuation/treble
+automation, and a healthy/critical-hull A/B checks bounded damage texture.
 Numerical checks do not replace listening on the target headphones or
 speakers; tone and levels can be tuned from player feedback.
